@@ -245,11 +245,19 @@ typedef __u32 __bitwise blk_opf_t;
 typedef unsigned int blk_qc_t;
 #define BLK_QC_T_NONE		-1U
 
+struct ib_extent_status {
+	__u32 es_lblk;	/* first logical block extent covers */
+	__u32 es_len;	/* length of extent in block */
+	__u64 es_pblk;	/* first physical block */
+};
 /*
  * main unit of I/O for the block layer and lower layers (ie drivers and
  * stacking drivers)
  */
 struct bio {
+	unsigned int 	ib_enable;
+	struct ib_extent_status ib_es[10];
+	unsigned int 	ib_es_num;
 	struct bio		*bi_next;	/* request queue link */
 	struct block_device	*bi_bdev;
 	blk_opf_t		bi_opf;		/* bottom bits REQ_OP, top bits

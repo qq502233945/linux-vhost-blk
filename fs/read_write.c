@@ -592,7 +592,40 @@ ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_
 	file_end_write(file);
 	return ret;
 }
+ssize_t vfs_write_ib(struct file *file, const char __user *buf, size_t count, loff_t *pos, unsigned int ib_enable)
+{
+	ssize_t ret;
+	struct inode *inode = file_inode(file);
+	if (!(file->f_mode & FMODE_WRITE))
+		return -EBADF;
+	if (!(file->f_mode & FMODE_CAN_WRITE))
+		return -EINVAL;
+	if (unlikely(!access_ok(buf, count)))
+		return -EFAULT;
 
+	ret = rw_verify_area(WRITE, file, pos, count);
+	if (ret)
+		return ret;
+	if (count > MAX_RW_COUNT)
+		count =  MAX_RW_COUNT;
+	if(ib_enable)
+		inode->ib_enable = 1;
+
+	file_start_write(file);
+	if (file->f_op->write)
+		ret = file->f_op->write(file, buf, count, pos);
+	else if (file->f_op->write_iter)
+		ret = new_sync_write(file, buf, count, pos);
+	else
+		ret = -EINVAL;
+	if (ret > 0) {
+		fsnotify_modify(file);
+		add_wchar(current, ret);
+	}
+	inc_syscw(current);
+	file_end_write(file);
+	return ret;
+}
 /* file_ppos returns &file->f_pos or NULL if file is stream */
 static inline loff_t *file_ppos(struct file *file)
 {
@@ -623,6 +656,83 @@ SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)
 	return ksys_read(fd, buf, count);
 }
 
+
+ssize_t vfs_read_ib(struct file *file, char __user *data_buf, size_t count, loff_t *pos, unsigned int ib_enable, char __user *scratch_buf)
+{
+	ssize_t ret;
+	struct  ScatterGatherQuery tmp;
+	int i;
+	struct inode *inode = file_inode(file);
+	if (!(file->f_mode & FMODE_READ))
+		return -EBADF;
+	if (!(file->f_mode & FMODE_CAN_READ))
+		return -EINVAL;
+	if (unlikely(!access_ok(data_buf, count)))
+		return -EFAULT;
+	if (unlikely(!access_ok(scratch_buf, PAGE_SIZE)))
+		return -EFAULT;
+
+	ret = rw_verify_area(READ, file, pos, count);
+	if (ret)
+		return ret;
+	if (count > MAX_RW_COUNT)
+		count =  MAX_RW_COUNT;
+	if(ib_enable == 1)
+	{
+
+		if (copy_from_user(&tmp, scratch_buf, sizeof(struct ScatterGatherQuery)))
+		{
+			printk("Copy Query Failed!\n");
+			return -EFAULT;
+		}
+		inode->ib_enable = 1;
+		for(i=0;i<tmp.n_keys;i++)
+		{
+			inode->ib_es[i].es_lblk = tmp.keys[i]; //use lblk to tranes the key to be search
+			inode->ib_es[i].es_len = 0; // use len to identiy whether the key is found;
+			inode->ib_es[i].es_pblk = 0; // use pblk to trans the value in db;
+		}
+
+	}
+
+	if (file->f_op->read)
+		ret = file->f_op->read(file, data_buf, count, pos);
+	else if (file->f_op->read_iter)
+		ret = new_sync_read(file, data_buf, count, pos);
+	else
+		ret = -EINVAL;
+	if (ret > 0) {
+		fsnotify_access(file);
+		add_rchar(current, ret);
+	}
+	inc_syscr(current);
+	return ret;
+}
+
+ssize_t ksys_read_ib(unsigned int fd, char __user *data_buf,
+                      size_t count, loff_t pos, unsigned int ib_enable,char __user *scratch_buf)
+{
+	struct fd f;
+	ssize_t ret = -EBADF;
+
+	if (pos < 0)
+		return -EINVAL;
+
+	f = fdget(fd);
+	if (f.file) {
+		ret = -ESPIPE;
+		if (f.file->f_mode & FMODE_PREAD)
+			ret = vfs_read_ib(f.file, data_buf, count, &pos, ib_enable,scratch_buf);
+		fdput(f);
+	}
+
+	return ret;
+}
+
+SYSCALL_DEFINE6(read_ib, unsigned int, fd, char __user *, buf, size_t, count, loff_t, pos, unsigned int, ib_enable, char __user *,scratch_buf)
+{
+	return ksys_read_ib(fd, buf, count, pos, ib_enable, scratch_buf);
+}
 ssize_t ksys_write(unsigned int fd, const char __user *buf, size_t count)
 {
 	struct fd f = fdget_pos(fd);
@@ -647,6 +757,31 @@ SYSCALL_DEFINE3(write, unsigned int, fd, const char __user *, buf,
 		size_t, count)
 {
 	return ksys_write(fd, buf, count);
+}
+ssize_t ksys_write_ib(unsigned int fd, const char __user *buf, size_t count, unsigned int ib_enable)
+{
+	struct fd f = fdget_pos(fd);
+	ssize_t ret = -EBADF;
+
+	if (f.file) {
+		loff_t pos, *ppos = file_ppos(f.file);
+		if (ppos) {
+			pos = *ppos;
+			ppos = &pos;
+		}
+		ret = vfs_write_ib(f.file, buf, count, ppos, ib_enable);
+		if (ret >= 0 && ppos)
+			f.file->f_pos = pos;
+		fdput_pos(f);
+	}
+
+	return ret;
+}
+
+SYSCALL_DEFINE4(write_ib, unsigned int, fd, const char __user *, buf,
+		size_t, count, unsigned int, ib_enable)
+{
+	return ksys_write_ib(fd, buf, count, ib_enable);
 }
 
 ssize_t ksys_pread64(unsigned int fd, char __user *buf, size_t count,

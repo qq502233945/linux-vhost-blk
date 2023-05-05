@@ -61,6 +61,9 @@ struct req_page_list {
 #define NR_INLINE 16
 
 struct vhost_blk_req {
+	unsigned int 	ib_enable;
+	struct host_extent_status ib_es[10];
+	unsigned int 	ib_es_num;
 	struct req_page_list inline_pl[NR_INLINE];
 	struct page *inline_page[NR_INLINE];
 	struct bio *inline_bio[NR_INLINE];

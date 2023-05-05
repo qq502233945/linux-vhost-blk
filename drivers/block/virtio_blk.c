@@ -348,7 +348,8 @@ static blk_status_t virtio_queue_rq(struct blk_mq_hw_ctx *hctx,
 	bool notify = false;
 	blk_status_t status;
 	int err;
-
+	vbr->out_hdr.ib_enable =0;
+	vbr->out_hdr.ib_es_num = 0;
 	status = virtblk_prep_rq(hctx, vblk, req, vbr);
 	if (unlikely(status))
 		return status;
@@ -388,7 +389,8 @@ static bool virtblk_prep_rq_batch(struct request *req)
 {
 	struct virtio_blk *vblk = req->mq_hctx->queue->queuedata;
 	struct virtblk_req *vbr = blk_mq_rq_to_pdu(req);
-
+	vbr->out_hdr.ib_enable =0;
+	vbr->out_hdr.ib_es_num = 0;
 	req->mq_hctx->tags->rqs[req->tag] = req;
 
 	return virtblk_prep_rq(req->mq_hctx, vblk, req, vbr) == BLK_STS_OK;
@@ -400,13 +402,26 @@ static bool virtblk_add_req_batch(struct virtio_blk_vq *vq,
 	unsigned long flags;
 	int err;
 	bool kick;
-
+	int i =0;
 	spin_lock_irqsave(&vq->lock, flags);
 
 	while (!rq_list_empty(*rqlist)) {
 		struct request *req = rq_list_pop(rqlist);
 		struct virtblk_req *vbr = blk_mq_rq_to_pdu(req);
-
+		vbr->out_hdr.ib_enable =0;
+		vbr->out_hdr.ib_es_num = 0;
+		if(req->ib_enable==1)
+		{
+			vbr->out_hdr.ib_enable = 1;
+			vbr->out_hdr.ib_es_num = req->ib_es_num;
+			for(i =0; i< req->ib_es_num; i++)
+			{
+				vbr->out_hdr.ib_es[i].es_lblk = req->ib_es[i].es_lblk;
+				vbr->out_hdr.ib_es[i].es_len = req->ib_es[i].es_len;
+				vbr->out_hdr.ib_es[i].es_pblk = req->ib_es[i].es_pblk;
+			}
+			req->ib_es_num = 0;
+		}
 		err = virtblk_add_req(vq->vq, vbr);
 		if (err) {
 			virtblk_unmap_data(req, vbr);

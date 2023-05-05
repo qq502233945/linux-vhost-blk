@@ -770,6 +770,14 @@ static int __es_insert_extent(struct inode *inode, struct extent_status *newes)
 				 * Here we can modify es_lblk directly
 				 * because it isn't overlapped.
 				 */
+				if(inode->ib_enable==1&&inode->ib_es_first==1) // record the root
+				{
+					inode->ib_es[inode->ib_es_num].es_lblk = es->es_lblk;
+					inode->ib_es[inode->ib_es_num].es_len = es->es_len;
+					inode->ib_es[inode->ib_es_num].es_pblk  = es->es_pblk & ~ES_MASK;
+					inode->ib_es_num += 1;
+					inode->ib_es_first=0;
+				}
 				es->es_lblk = newes->es_lblk;
 				es->es_len += newes->es_len;
 				if (ext4_es_is_written(es) ||
@@ -777,13 +785,49 @@ static int __es_insert_extent(struct inode *inode, struct extent_status *newes)
 					ext4_es_store_pblock(es,
 							     newes->es_pblk);
 				es = ext4_es_try_to_merge_left(inode, es);
+				if(inode->ib_enable==1)
+					{
+						if(inode->ib_es_num>=10)
+						{
+							printk("Error! the ib_es in the inode is not enough!\n");
+						}
+						else
+						{
+							inode->ib_es[inode->ib_es_num].es_lblk = newes->es_lblk;
+							inode->ib_es[inode->ib_es_num].es_len = newes->es_len;
+							inode->ib_es[inode->ib_es_num].es_pblk  = newes->es_pblk;
+							inode->ib_es_num += 1;
+						}
+					}
 				goto out;
 			}
 			p = &(*p)->rb_left;
 		} else if (newes->es_lblk > ext4_es_end(es)) {
 			if (ext4_es_can_be_merged(es, newes)) {
+				if(inode->ib_enable==1&&inode->ib_es_first==1) // record the root
+				{
+					inode->ib_es[inode->ib_es_num].es_lblk = es->es_lblk;
+					inode->ib_es[inode->ib_es_num].es_len = es->es_len;
+					inode->ib_es[inode->ib_es_num].es_pblk  = es->es_pblk & ~ES_MASK;
+					inode->ib_es_num += 1;
+					inode->ib_es_first=0;
+				}
 				es->es_len += newes->es_len;
 				es = ext4_es_try_to_merge_right(inode, es);
+				if(inode->ib_enable==1)
+					{
+						if(inode->ib_es_num>=10)
+						{
+							printk("Error! the ib_es in the inode is not enough!\n");
+						}
+						else
+						{
+							inode->ib_es[inode->ib_es_num].es_lblk = newes->es_lblk;
+							inode->ib_es[inode->ib_es_num].es_len = newes->es_len;
+							inode->ib_es[inode->ib_es_num].es_pblk  = newes->es_pblk;
+							inode->ib_es_num += 1;
+						}
+					}
 				goto out;
 			}
 			p = &(*p)->rb_right;
@@ -795,6 +839,20 @@ static int __es_insert_extent(struct inode *inode, struct extent_status *newes)
 
 	es = ext4_es_alloc_extent(inode, newes->es_lblk, newes->es_len,
 				  newes->es_pblk);
+	if(inode->ib_enable==1&&newes->es_len!=0xFFFFFFFF)
+	{
+		if(inode->ib_es_num>=10)
+		{
+			printk("Error! the ib_es in the inode is not enough!\n");
+		}
+		else
+		{
+			inode->ib_es[inode->ib_es_num].es_lblk = newes->es_lblk;
+			inode->ib_es[inode->ib_es_num].es_len = newes->es_len;
+			inode->ib_es[inode->ib_es_num].es_pblk  = newes->es_pblk;
+			inode->ib_es_num += 1;
+		}
+	}
 	if (!es)
 		return -ENOMEM;
 	rb_link_node(&es->rb_node, parent, p);

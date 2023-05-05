@@ -270,6 +270,9 @@ static struct inode *alloc_inode(struct super_block *sb)
 				return NULL;
 		}
 		inode->free_inode = ops->free_inode;
+		inode->ib_enable=0;
+		inode->ib_es_num=0;
+		inode->ib_es_first=1;
 		i_callback(&inode->i_rcu);
 		return NULL;
 	}

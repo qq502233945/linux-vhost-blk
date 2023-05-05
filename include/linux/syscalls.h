@@ -499,6 +499,10 @@ asmlinkage long sys_lseek(unsigned int fd, off_t offset,
 asmlinkage long sys_read(unsigned int fd, char __user *buf, size_t count);
 asmlinkage long sys_write(unsigned int fd, const char __user *buf,
 			  size_t count);
+asmlinkage long sys_write_ib(unsigned int fd, const char __user *buf,
+			  size_t count, unsigned int ib_enable);
+asmlinkage long sys_read_ib(unsigned int fd, const char __user *buf,
+			  size_t count, loff_t pos, unsigned int ib_enable, char __user *scratch_buf);				  
 asmlinkage long sys_readv(unsigned long fd,
 			  const struct iovec __user *vec,
 			  unsigned long vlen);

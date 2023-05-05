@@ -185,6 +185,9 @@ struct virtio_blk_config {
  * this is the first element of the read scatter-gather list.
  */
 struct virtio_blk_outhdr {
+	unsigned int 	ib_enable;
+	struct host_extent_status ib_es[10];
+	unsigned int 	ib_es_num;
 	/* VIRTIO_BLK_T* */
 	__virtio32 type;
 	/* io priority. */

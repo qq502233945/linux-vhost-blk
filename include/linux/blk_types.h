@@ -250,6 +250,7 @@ typedef unsigned int blk_qc_t;
  * stacking drivers)
  */
 struct bio {
+	unsigned int 	ib_enable;
 	struct bio		*bi_next;	/* request queue link */
 	struct block_device	*bi_bdev;
 	blk_opf_t		bi_opf;		/* bottom bits REQ_OP, top bits
@@ -308,6 +309,15 @@ struct bio {
 	 * double allocations for a small number of bio_vecs. This member
 	 * MUST obviously be kept at the very end of the bio.
 	 */
+
+	bool			xrp_enabled;
+	struct inode		*xrp_inode;
+	u64			xrp_partition_start_sector;
+	int			xrp_count;
+	struct page		*xrp_scratch_page;
+	struct bpf_prog		*xrp_bpf_prog;
+	u64			xrp_extent_version;
+	loff_t			xrp_file_offset;
 	struct bio_vec		bi_inline_vecs[];
 };
 

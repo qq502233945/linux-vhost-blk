@@ -21,7 +21,7 @@
 #include <linux/kthread.h>
 #include <linux/blkdev.h>
 #include <linux/llist.h>
-
+#include <linux/fs.h>
 #include "vhost.h"
 
 enum {
@@ -61,6 +61,9 @@ struct req_page_list {
 #define NR_INLINE 16
 
 struct vhost_blk_req {
+	unsigned int 	ib_enable;
+	struct host_extent_status ib_es[10];
+	unsigned int 	ib_es_num;
 	struct req_page_list inline_pl[NR_INLINE];
 	struct page *inline_page[NR_INLINE];
 	struct bio *inline_bio[NR_INLINE];
@@ -296,6 +299,7 @@ static int vhost_blk_bio_make(struct vhost_blk_req *req,
 				bio = bio_alloc(bdev, pages_nr, req->bi_opf, GFP_KERNEL);
 				if (!bio)
 					goto fail;
+				//get the guest bio here
 				bio->bi_iter.bi_sector  = req->sector;
 				bio->bi_private = req;
 				bio->bi_end_io  = vhost_blk_req_done;
@@ -325,7 +329,7 @@ static inline void vhost_blk_bio_send(struct vhost_blk_req *req)
 {
 	struct blk_plug plug;
 	int i, bio_nr;
-
+	//check whether the bio struct is same
 	bio_nr = atomic_read(&req->bio_nr);
 	blk_start_plug(&plug);
 	for (i = 0; i < bio_nr; i++)
@@ -341,6 +345,26 @@ static int vhost_blk_req_submit(struct vhost_blk_req *req, struct file *file)
 	struct block_device *bdev = I_BDEV(inode);
 	int ret;
 
+	int i;
+	if(req->ib_enable==1 && req->bi_opf == REQ_OP_WRITE)
+	{
+		if(req->ib_es_num>0)
+		{
+			printk("Saving ES!\n");
+			for(i=0;i<req->ib_es_num;i++)
+			{
+				spin_lock(&inode->xrp_extent_lock);
+				printk("The %dth es:lblk: %lu; len: %lu; pblk: %llu\n",i,req->ib_es[i].es_lblk,req->ib_es[i].es_len,req->ib_es[i].es_pblk);
+				xrp_sync_ext4_extent(inode,&req->ib_es[i]);
+				spin_unlock(&inode->xrp_extent_lock);		
+			}
+			printk("ES saved OK!\n");
+		}
+	}
+	if(req->ib_enable==1 && req->bi_opf == REQ_OP_READ)
+	{
+		
+	}
 	ret = vhost_blk_bio_make(req, bdev);
 	if (ret < 0)
 		return ret;
@@ -366,14 +390,17 @@ static int vhost_blk_req_handle(struct vhost_virtqueue *vq,
 	struct vhost_blk_req *req;
 	struct iov_iter iter;
 	int ret, len;
+	int i;
 	u8 status;
-
 	req		= &blk_vq->req[head];
+	req->ib_enable = 0;
 	req->blk_vq	= blk_vq;
 	req->head	= head;
 	req->blk	= blk;
 	req->sector	= hdr->sector;
 	req->iov	= blk_vq->iov;
+	req->ib_es_num = 0;
+	req->ib_enable = 0;
 
 	req->len	= iov_length(vq->iov, total_iov_nr) - sizeof(status);
 	req->iov_nr	= move_iovec(vq->iov, req->iov, req->len, total_iov_nr,
@@ -383,14 +410,24 @@ static int vhost_blk_req_handle(struct vhost_virtqueue *vq,
 			 ARRAY_SIZE(req->status));
 	if (ret < 0 || req->iov_nr < 0)
 		return -EINVAL;
-
+	if(hdr->ib_enable==1)
+	{
+		for(i=0;i<hdr->ib_es_num;i++){
+			// printk("The %dth es:lblk: %lu; len: %lu; pblk: %llu\n",i,hdr->ib_es[i].es_lblk,hdr->ib_es[i].es_len,hdr->ib_es[i].es_pblk);
+			req->ib_es[i].es_lblk = hdr->ib_es[i].es_lblk ;
+			req->ib_es[i].es_len = hdr->ib_es[i].es_len;
+			req->ib_es[i].es_pblk = hdr->ib_es[i].es_pblk;
+		}
+		req->ib_es_num = hdr->ib_es_num;
+		req->ib_enable = hdr->ib_enable;
+	}
 	switch (hdr->type) {
 	case VIRTIO_BLK_T_OUT:
 		req->bi_opf = REQ_OP_WRITE;
 		ret = vhost_blk_req_submit(req, file);
 		break;
 	case VIRTIO_BLK_T_IN:
-		req->bi_opf = REQ_OP_READ;
+		req->bi_opf = REQ_OP_READ;		
 		ret = vhost_blk_req_submit(req, file);
 		break;
 	case VIRTIO_BLK_T_FLUSH:
@@ -430,7 +467,7 @@ static void vhost_blk_handle_guest_kick(struct vhost_work *work)
 	int in, out, ret;
 	struct file *f;
 	u16 head;
-
+	
 	vq = container_of(work, struct vhost_virtqueue, poll.work);
 	blk = container_of(vq->dev, struct vhost_blk, dev);
 	blk_vq = container_of(vq, struct vhost_blk_vq, vq);
@@ -454,14 +491,14 @@ static void vhost_blk_handle_guest_kick(struct vhost_work *work)
 			}
 			break;
 		}
-
+	
 		ret = move_iovec(vq->iov, hdr_iovec, sizeof(hdr), in + out, ARRAY_SIZE(hdr_iovec));
 		if (ret < 0) {
 			vq_err(vq, "virtio_blk_hdr is too split!");
 			vhost_discard_vq_desc(vq, 1);
 			break;
 		}
-
+		
 		iov_iter_init(&iter, READ, hdr_iovec, ARRAY_SIZE(hdr_iovec), sizeof(hdr));
 		ret = copy_from_iter(&hdr, sizeof(hdr), &iter);
 		if (ret != sizeof(hdr)) {
@@ -470,7 +507,7 @@ static void vhost_blk_handle_guest_kick(struct vhost_work *work)
 			vhost_discard_vq_desc(vq, 1);
 			break;
 		}
-
+	
 		if (vhost_blk_req_handle(vq, &hdr, head, out + in, f) < 0) {
 			vhost_discard_vq_desc(vq, 1);
 			break;

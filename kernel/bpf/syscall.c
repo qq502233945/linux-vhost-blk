@@ -68,6 +68,8 @@ static const struct bpf_map_ops * const bpf_map_types[] = {
 #undef BPF_LINK_TYPE
 };
 
+# define offsetofend(TYPE, FIELD) \
+	(offsetof(TYPE, FIELD) + sizeof(((TYPE *)0)->FIELD))
 /*
  * If we're handed a bigger struct than we know of, ensure all the unknown bits
  * are 0 - i.e. new user-space does not rely on any kernel feature extensions
@@ -2668,8 +2670,10 @@ static int bpf_obj_get(const union bpf_attr *attr)
 {
 	if (CHECK_ATTR(BPF_OBJ) || attr->bpf_fd != 0 ||
 	    attr->file_flags & ~BPF_OBJ_FLAG_MASK)
-		return -EINVAL;
-
+		{
+			printk("bpf_obj_get error!\n");
+			return -EINVAL;
+		}	
 	return bpf_obj_get_user(u64_to_user_ptr(attr->pathname),
 				attr->file_flags);
 }
@@ -4927,21 +4931,17 @@ static int __sys_bpf(int cmd, bpfptr_t uattr, unsigned int size)
 	if (!capable &&
 	    (cmd == BPF_MAP_CREATE || cmd == BPF_PROG_LOAD))
 		return -EPERM;
-
 	err = bpf_check_uarg_tail_zero(uattr, sizeof(attr), size);
 	if (err)
 		return err;
 	size = min_t(u32, size, sizeof(attr));
-
 	/* copy attributes from user space, may be less than sizeof(bpf_attr) */
 	memset(&attr, 0, sizeof(attr));
 	if (copy_from_bpfptr(&attr, uattr, size) != 0)
 		return -EFAULT;
-
 	err = security_bpf(cmd, &attr, size);
 	if (err < 0)
 		return err;
-
 	switch (cmd) {
 	case BPF_MAP_CREATE:
 		err = map_create(&attr);
@@ -5100,7 +5100,19 @@ BPF_CALL_3(bpf_sys_bpf, int, cmd, union bpf_attr *, attr, u32, attr_size)
 	return __sys_bpf(cmd, KERNEL_BPFPTR(attr), attr_size);
 }
 
-
+int bpf_obj_get_ib(const char *pathname)
+{
+	printk("bpf_obj_get_ib ing !\n");
+	const size_t attr_sz = offsetofend(union bpf_attr, file_flags);
+	union bpf_attr attr;
+	int fd;
+	memset(&attr, 0, attr_sz);
+	attr.pathname = (__u64)(unsigned long)((void *)pathname);
+	attr.file_flags = 0;
+	fd  = __sys_bpf(BPF_OBJ_GET,KERNEL_BPFPTR(&attr),attr_sz);
+	return fd;
+}
+EXPORT_SYMBOL_GPL(bpf_obj_get_ib);
 /* To shut up -Wmissing-prototypes.
  * This function is used by the kernel light skeleton
  * to load bpf programs when modules are loaded or during kernel boot.

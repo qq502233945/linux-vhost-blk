@@ -186,7 +186,7 @@ struct virtio_blk_config {
  */
 struct virtio_blk_outhdr {
 	unsigned int 	ib_enable;
-	struct host_extent_status ib_es[10];
+	struct host_extent_status ib_es[15];
 	unsigned int 	ib_es_num;
 	/* VIRTIO_BLK_T* */
 	__virtio32 type;

@@ -23,6 +23,11 @@
 #include <linux/llist.h>
 #include <linux/fs.h>
 #include "vhost.h"
+#include <linux/bpf.h>
+#include <linux/errno.h>
+#include <linux/fcntl.h>
+#include <linux/syscalls.h>
+
 
 enum {
 	VHOST_BLK_FEATURES = VHOST_FEATURES |
@@ -62,7 +67,7 @@ struct req_page_list {
 
 struct vhost_blk_req {
 	unsigned int 	ib_enable;
-	struct host_extent_status ib_es[10];
+	struct host_extent_status ib_es[15];
 	unsigned int 	ib_es_num;
 	struct req_page_list inline_pl[NR_INLINE];
 	struct page *inline_page[NR_INLINE];
@@ -82,6 +87,9 @@ struct vhost_blk_req {
 	atomic_t bio_nr;
 
 	struct iovec status[VHOST_MAX_METADATA_IOV];
+	struct iovec vbr_copy[VHOST_MAX_METADATA_IOV];
+	__u32 type;
+	__u32 ioprio;
 
 	sector_t sector;
 	int bi_opf;
@@ -139,12 +147,38 @@ static int move_iovec(struct iovec *from, struct iovec *to,
 
 	return len ? -1 : moved_seg;
 }
+static int copy_iovec(struct iovec *from, struct iovec *to,
+		      size_t len, int iov_count_from, int iov_count_to)
+{
+	int moved_seg = 0, spent_seg = 0;
+	size_t size;
+	struct iovec *head;
+	head = from;
+	while (len && spent_seg < iov_count_from && moved_seg < iov_count_to) {
+		if (from->iov_len == 0) {
+			++from;
+			++spent_seg;
+			continue;
+		}
+		size = min(head->iov_len, len);
+		to->iov_base = head->iov_base;
+		to->iov_len = size;
+		len -= size;
+		++head;
+		++to;
+		++moved_seg;
+		++spent_seg;
+	}
+
+	return len ? -1 : moved_seg;
+}
 
 static inline int iov_num_pages(struct iovec *iov)
 {
 	return (PAGE_ALIGN((unsigned long)iov->iov_base + iov->iov_len) -
 	       ((unsigned long)iov->iov_base & PAGE_MASK)) >> PAGE_SHIFT;
 }
+
 
 static inline int vhost_blk_set_status(struct vhost_blk_req *req, u8 status)
 {
@@ -161,17 +195,47 @@ static inline int vhost_blk_set_status(struct vhost_blk_req *req, u8 status)
 	return 0;
 }
 
+static inline int vhost_blk_set_vbr(struct vhost_blk_req *req, struct virtio_blk_outhdr *hdr)
+{
+	struct iov_iter iter;
+	int ret;
+
+	iov_iter_init(&iter, WRITE, req->vbr_copy, ARRAY_SIZE(req->vbr_copy), sizeof(struct virtio_blk_outhdr));
+	ret = copy_to_iter(hdr, sizeof(struct virtio_blk_outhdr), &iter);
+	if (ret != sizeof(struct virtio_blk_outhdr)) {
+		printk( "Failed to write vbr\n");
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
 static void vhost_blk_req_done(struct bio *bio)
 {
+	int i;
 	struct vhost_blk_req *req = bio->bi_private;
-
+	if(req->ib_enable==1&&req->bi_opf==REQ_OP_READ)
+	{
+		for(i = 0; i<bio->xrp_scratch_page.n_keys;i++ )
+		{
+			printk("The kye is %u,  found is %u, vhr value is %u\n", bio->xrp_scratch_page.keys[i], \
+						bio->xrp_scratch_page.values[i].found, \
+						bio->xrp_scratch_page.values[i].value);
+			req->ib_es[i].es_len = bio->xrp_scratch_page.values[i].found;
+			req->ib_es[i].es_pblk = (__u64)bio->xrp_scratch_page.values[i].value;
+		}
+	}
 	req->bio_err = blk_status_to_errno(bio->bi_status);
 
 	if (atomic_dec_and_test(&req->bio_nr)) {
 		llist_add(&req->llnode, &req->blk_vq->llhead);
 		vhost_work_vqueue(&req->blk_vq->vq, &req->blk_vq->work);
 	}
-
+	if(bio->xrp_enabled)
+	{
+		bpf_prog_put(bio->xrp_bpf_prog);
+		bio->xrp_bpf_prog = NULL;
+	}
 	bio_put(bio);
 }
 
@@ -243,7 +307,7 @@ static struct page **vhost_blk_prepare_req(struct vhost_blk_req *req,
 static int vhost_blk_bio_make(struct vhost_blk_req *req,
 			      struct block_device *bdev)
 {
-	int pages_nr_total, i, j, ret;
+	int pages_nr_total, i, j, m,ret;
 	struct iovec *iov = req->iov;
 	int iov_nr = req->iov_nr;
 	struct page **pages, *page;
@@ -303,6 +367,31 @@ static int vhost_blk_bio_make(struct vhost_blk_req *req,
 				bio->bi_iter.bi_sector  = req->sector;
 				bio->bi_private = req;
 				bio->bi_end_io  = vhost_blk_req_done;
+				if(req->bi_opf == REQ_OP_READ && req->ib_enable==1)
+				{
+					bio->xrp_enabled = req->ib_enable;
+					bio->xrp_inode = bdev->bd_inode;
+					bio->xrp_partition_start_sector = 0;
+					bio->xrp_count = 1;
+					if (bio->xrp_enabled) {
+						bio->xrp_scratch_page.n_keys = req->ib_es_num;
+						for(m=0;m<req->ib_es_num;m++)
+						{
+							bio->xrp_scratch_page.keys[m] = req->ib_es[m].es_lblk;
+						}
+						int bpf_fd = bpf_obj_get_ib("/sys/fs/bpf/oliver_agg");
+						if(bpf_fd < 0)
+						{
+							printk("bpf open error \n");
+						}
+						bio->xrp_bpf_prog = bpf_prog_get_type(bpf_fd, BPF_PROG_TYPE_XRP);
+						if (IS_ERR(bio->xrp_bpf_prog)) {
+							printk("iomap_dio_bio_actor: failed to get bpf prog\n");
+							bio->xrp_bpf_prog = NULL;
+							bio->xrp_enabled = false;
+						}
+					}
+				}
 			req->bio[bio_nr++] = bio;
 			}
 
@@ -344,7 +433,6 @@ static int vhost_blk_req_submit(struct vhost_blk_req *req, struct file *file)
 	struct inode *inode = file->f_mapping->host;
 	struct block_device *bdev = I_BDEV(inode);
 	int ret;
-
 	int i;
 	if(req->ib_enable==1 && req->bi_opf == REQ_OP_WRITE)
 	{
@@ -361,10 +449,7 @@ static int vhost_blk_req_submit(struct vhost_blk_req *req, struct file *file)
 			printk("ES saved OK!\n");
 		}
 	}
-	if(req->ib_enable==1 && req->bi_opf == REQ_OP_READ)
-	{
-		
-	}
+
 	ret = vhost_blk_bio_make(req, bdev);
 	if (ret < 0)
 		return ret;
@@ -382,7 +467,7 @@ static int vhost_blk_req_submit(struct vhost_blk_req *req, struct file *file)
 static int vhost_blk_req_handle(struct vhost_virtqueue *vq,
 				struct virtio_blk_outhdr *hdr,
 				u16 head, u16 total_iov_nr,
-				struct file *file)
+				struct file *file, struct iovec *hdr_iovec_copy)
 {
 	struct vhost_blk *blk = container_of(vq->dev, struct vhost_blk, dev);
 	struct vhost_blk_vq *blk_vq = container_of(vq, struct vhost_blk_vq, vq);
@@ -400,7 +485,6 @@ static int vhost_blk_req_handle(struct vhost_virtqueue *vq,
 	req->sector	= hdr->sector;
 	req->iov	= blk_vq->iov;
 	req->ib_es_num = 0;
-	req->ib_enable = 0;
 
 	req->len	= iov_length(vq->iov, total_iov_nr) - sizeof(status);
 	req->iov_nr	= move_iovec(vq->iov, req->iov, req->len, total_iov_nr,
@@ -408,6 +492,7 @@ static int vhost_blk_req_handle(struct vhost_virtqueue *vq,
 
 	ret = move_iovec(vq->iov, req->status, sizeof(status), total_iov_nr,
 			 ARRAY_SIZE(req->status));
+	ret = 	move_iovec(hdr_iovec_copy, req->vbr_copy, sizeof(struct virtio_blk_outhdr), ARRAY_SIZE(req->vbr_copy), ARRAY_SIZE(req->vbr_copy));
 	if (ret < 0 || req->iov_nr < 0)
 		return -EINVAL;
 	if(hdr->ib_enable==1)
@@ -420,6 +505,11 @@ static int vhost_blk_req_handle(struct vhost_virtqueue *vq,
 		}
 		req->ib_es_num = hdr->ib_es_num;
 		req->ib_enable = hdr->ib_enable;
+		if(hdr->type == VIRTIO_BLK_T_IN)
+		{
+			req->ioprio = hdr->ioprio;
+			req->type = VIRTIO_BLK_T_IN;
+		}
 	}
 	switch (hdr->type) {
 	case VIRTIO_BLK_T_OUT:
@@ -462,6 +552,7 @@ static void vhost_blk_handle_guest_kick(struct vhost_work *work)
 	struct vhost_blk_vq *blk_vq;
 	struct vhost_virtqueue *vq;
 	struct iovec hdr_iovec[VHOST_MAX_METADATA_IOV];
+	struct iovec hdr_iovec_copy[VHOST_MAX_METADATA_IOV];
 	struct vhost_blk *blk;
 	struct iov_iter iter;
 	int in, out, ret;
@@ -491,7 +582,10 @@ static void vhost_blk_handle_guest_kick(struct vhost_work *work)
 			}
 			break;
 		}
-	
+		ret = copy_iovec(vq->iov, hdr_iovec_copy, sizeof(hdr), in + out, ARRAY_SIZE(hdr_iovec_copy));
+		if (ret < 0) {
+			printk("vhost_blk_handle_guest_kick, iovec copy failure!\n");
+		}
 		ret = move_iovec(vq->iov, hdr_iovec, sizeof(hdr), in + out, ARRAY_SIZE(hdr_iovec));
 		if (ret < 0) {
 			vq_err(vq, "virtio_blk_hdr is too split!");
@@ -508,7 +602,7 @@ static void vhost_blk_handle_guest_kick(struct vhost_work *work)
 			break;
 		}
 	
-		if (vhost_blk_req_handle(vq, &hdr, head, out + in, f) < 0) {
+		if (vhost_blk_req_handle(vq, &hdr, head, out + in, f, hdr_iovec_copy) < 0) {
 			vhost_discard_vq_desc(vq, 1);
 			break;
 		}
@@ -523,6 +617,7 @@ static void vhost_blk_handle_guest_kick(struct vhost_work *work)
 static void vhost_blk_handle_host_kick(struct vhost_work *work)
 {
 	struct vhost_blk_vq *blk_vq;
+	struct virtio_blk_outhdr hdr;
 	struct vhost_virtqueue *vq;
 	struct vhost_blk_req *req;
 	struct llist_node *llnode;
@@ -530,7 +625,7 @@ static void vhost_blk_handle_host_kick(struct vhost_work *work)
 	bool added, zero;
 	u8 status;
 	int ret;
-
+	int i;
 	blk_vq = container_of(work, struct vhost_blk_vq, work);
 	vq = &blk_vq->vq;
 	llnode = llist_del_all(&blk_vq->llhead);
@@ -543,6 +638,22 @@ static void vhost_blk_handle_host_kick(struct vhost_work *work)
 			blk = req->blk;
 
 		vhost_blk_req_umap(req);
+		if(req->ib_enable==1&&req->bi_opf==REQ_OP_READ)
+		{
+			hdr.ib_enable = req->ib_enable;
+			hdr.ib_es_num = req->ib_es_num;
+			
+			for(i=0; i<req->ib_es_num;i++ )
+			{
+				hdr.ib_es[i].es_lblk = req->ib_es[i].es_lblk;
+				hdr.ib_es[i].es_len  = req->ib_es[i].es_len;
+				hdr.ib_es[i].es_pblk = req->ib_es[i].es_pblk;
+			}
+			hdr.ioprio = req->ioprio;
+			hdr.type   = req->type;
+			hdr.sector = req->sector;
+			vhost_blk_set_vbr(req, &hdr);
+		}
 
 		status = req->bio_err == 0 ?  VIRTIO_BLK_S_OK : VIRTIO_BLK_S_IOERR;
 		ret = vhost_blk_set_status(req, status);

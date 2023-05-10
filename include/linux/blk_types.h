@@ -249,6 +249,21 @@ typedef unsigned int blk_qc_t;
  * main unit of I/O for the block layer and lower layers (ie drivers and
  * stacking drivers)
  */
+
+struct MaybeValue {
+    char found;
+    __u8 value;
+};
+struct ScatterGatherQuery {
+    __u32 root_pointer;
+    __u32 value_ptr;
+    unsigned int state_flags;
+    int current_index;
+    int n_keys;
+    __u32 keys[32];
+    struct MaybeValue values[32];
+};
+
 struct bio {
 	unsigned int 	ib_enable;
 	struct bio		*bi_next;	/* request queue link */
@@ -314,7 +329,7 @@ struct bio {
 	struct inode		*xrp_inode;
 	u64			xrp_partition_start_sector;
 	int			xrp_count;
-	struct page		*xrp_scratch_page;
+	struct ScatterGatherQuery 	xrp_scratch_page;
 	struct bpf_prog		*xrp_bpf_prog;
 	u64			xrp_extent_version;
 	loff_t			xrp_file_offset;

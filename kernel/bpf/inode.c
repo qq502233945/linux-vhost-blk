@@ -502,20 +502,20 @@ static void *bpf_obj_do_get(const char __user *pathname,
 	struct path path;
 	void *raw;
 	int ret;
-
+	printk("bpf_obj_get_ib pathname is %s\n",pathname);
 	ret = user_path_at(AT_FDCWD, pathname, LOOKUP_FOLLOW, &path);
 	if (ret)
 		return ERR_PTR(ret);
-
+	printk("bpf_obj_get ok 1!\n");
 	inode = d_backing_inode(path.dentry);
 	ret = path_permission(&path, ACC_MODE(flags));
 	if (ret)
 		goto out;
-
+	printk("bpf_obj_get ok 2!\n");
 	ret = bpf_inode_type(inode, type);
 	if (ret)
 		goto out;
-
+	printk("bpf_obj_get ok 3!\n");
 	raw = bpf_any_get(inode->i_private, *type);
 	if (!IS_ERR(raw))
 		touch_atime(&path);
@@ -537,11 +537,11 @@ int bpf_obj_get_user(const char __user *pathname, int flags)
 	f_flags = bpf_get_file_flag(flags);
 	if (f_flags < 0)
 		return f_flags;
-
+	
 	raw = bpf_obj_do_get(pathname, &type, f_flags);
 	if (IS_ERR(raw))
 		return PTR_ERR(raw);
-
+	
 	if (type == BPF_TYPE_PROG)
 		ret = bpf_prog_new_fd(raw);
 	else if (type == BPF_TYPE_MAP)
@@ -552,7 +552,11 @@ int bpf_obj_get_user(const char __user *pathname, int flags)
 		return -ENOENT;
 
 	if (ret < 0)
+	{
 		bpf_any_put(raw, type);
+		printk("bpf_obj_get_ib error 8!\n");
+	}
+		
 	return ret;
 }
 

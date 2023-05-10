@@ -7,7 +7,7 @@
 #include <linux/lockdep.h>
 #include <linux/scatterlist.h>
 #include <linux/prefetch.h>
-
+#include <linux/nvme.h>
 struct blk_mq_tags;
 struct blk_flush_queue;
 
@@ -195,7 +195,7 @@ struct request {
 		struct __call_single_data csd;
 		u64 fifo_time;
 	};
-
+	struct nvme_command *xrp_command;
 	/*
 	 * completion callback.
 	 */

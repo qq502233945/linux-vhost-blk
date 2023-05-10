@@ -592,6 +592,7 @@ struct fsnotify_mark_connector;
 
 struct xrp_tree {
 	struct rb_root   rb_root;
+	__u64 version;
 	struct xrp_extent *cache_es;
 };
 

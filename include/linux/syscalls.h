@@ -72,6 +72,7 @@ struct open_how;
 struct mount_attr;
 struct landlock_ruleset_attr;
 enum landlock_rule_type;
+struct xrp_stats;
 
 #include <linux/types.h>
 #include <linux/aio_abi.h>
@@ -1142,6 +1143,7 @@ asmlinkage long sys_utimes(char __user *filename,
 asmlinkage long sys_futimesat(int dfd, const char __user *filename,
 			      struct __kernel_old_timeval __user *utimes);
 #endif
+
 asmlinkage long sys_futimesat_time32(unsigned int dfd,
 				     const char __user *filename,
 				     struct old_timeval32 __user *t);
@@ -1380,6 +1382,8 @@ long compat_ksys_semtimedop(int semid, struct sembuf __user *tsems,
 long __do_semtimedop(int semid, struct sembuf *tsems, unsigned int nsops,
 		     const struct timespec64 *timeout,
 		     struct ipc_namespace *ns);
+asmlinkage long sys_print_xrp_stats(struct xrp_stats __user *buf);
+asmlinkage long sys_test_xrp(char __user *data_buf, char __user *scratch_buf, unsigned int bpf_fd);
 
 int __sys_getsockopt(int fd, int level, int optname, char __user *optval,
 		int __user *optlen);

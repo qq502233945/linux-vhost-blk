@@ -686,6 +686,7 @@ struct bpf_insn_access_aux {
 			u32 btf_id;
 		};
 	};
+	int mem_size; /* for PTR_TO_MEM */
 	struct bpf_verifier_log *log; /* for verbose logs */
 };
 
@@ -1708,7 +1709,7 @@ extern const struct file_operations bpf_iter_fops;
 extern const struct bpf_prog_ops bpf_offload_prog_ops;
 extern const struct bpf_verifier_ops tc_cls_act_analyzer_ops;
 extern const struct bpf_verifier_ops xdp_analyzer_ops;
-
+int bpf_obj_get_ib(const char *pathname);
 struct bpf_prog *bpf_prog_get(u32 ufd);
 struct bpf_prog *bpf_prog_get_type_dev(u32 ufd, enum bpf_prog_type type,
 				       bool attach_drv);

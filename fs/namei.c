@@ -135,22 +135,11 @@ getname_flags(const char __user *filename, int flags, int *empty)
 	result = audit_reusename(filename);
 	if (result)
 		return result;
-	if(*(filename->name)=="/sys/fs/bpf/oliver_agg")
-	{
-		printk("bpf_obj_get ok 0-1!\n");
-	}
-	
 	result = __getname();
 	if (unlikely(!result))
 		return ERR_PTR(-ENOMEM);
-	if(*(filename->name)=="/sys/fs/bpf/oliver_agg")
-	{
-		printk("bpf_obj_get ok 0-2!\n");
-	}
-	/*
-	 * First, try to embed the struct filename inside the names_cache
-	 * allocation
-	 */
+
+
 	kname = (char *)result->iname;
 	result->name = kname;
 
@@ -159,7 +148,7 @@ getname_flags(const char __user *filename, int flags, int *empty)
 		__putname(result);
 		return ERR_PTR(len);
 	}
-	if(*(filename->name)=="/sys/fs/bpf/oliver_agg")
+	if(sysfs_streq(kname,"/sys/fs/bpf/oliver_agg"))
 	{
 		printk("bpf_obj_get ok 0-3!\n");
 	}
@@ -183,10 +172,7 @@ getname_flags(const char __user *filename, int flags, int *empty)
 			__putname(kname);
 			return ERR_PTR(-ENOMEM);
 		}
-		if(*(filename->name)=="/sys/fs/bpf/oliver_agg")
-		{
-			printk("bpf_obj_get ok 0-4!\n");
-		}
+		
 		result->name = kname;
 		len = strncpy_from_user(kname, filename, PATH_MAX);
 		if (unlikely(len < 0)) {
@@ -194,7 +180,7 @@ getname_flags(const char __user *filename, int flags, int *empty)
 			kfree(result);
 			return ERR_PTR(len);
 		}
-		if(*(filename->name)=="/sys/fs/bpf/oliver_agg")
+		if(sysfs_streq(kname,"/sys/fs/bpf/oliver_agg"))
 		{
 			printk("bpf_obj_get ok 0-5!\n");
 		}
@@ -202,10 +188,6 @@ getname_flags(const char __user *filename, int flags, int *empty)
 			__putname(kname);
 			kfree(result);
 			return ERR_PTR(-ENAMETOOLONG);
-		}
-		if(*(filename->name)=="/sys/fs/bpf/oliver_agg")
-		{
-			printk("bpf_obj_get ok 0-6!\n");
 		}
 	}
 
@@ -219,7 +201,7 @@ getname_flags(const char __user *filename, int flags, int *empty)
 			return ERR_PTR(-ENOENT);
 		}
 	}
-	if(*(filename->name)=="/sys/fs/bpf/oliver_agg")
+	if(sysfs_streq(kname,"/sys/fs/bpf/oliver_agg"))
 	{
 		printk("bpf_obj_get ok 0-7!\n");
 	}
@@ -2899,6 +2881,7 @@ int user_path_at_empty(int dfd, const char __user *name, unsigned flags,
 		 struct path *path, int *empty)
 {
 	struct filename *filename = getname_flags(name, flags, empty);
+	printk("bpf_obj_get ok 4!\n");
 	int ret = filename_lookup(dfd, filename, flags, path, NULL);
 
 	putname(filename);

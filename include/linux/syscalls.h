@@ -497,6 +497,8 @@ asmlinkage long sys_llseek(unsigned int fd, unsigned long offset_high,
 asmlinkage long sys_lseek(unsigned int fd, off_t offset,
 			  unsigned int whence);
 asmlinkage long sys_read(unsigned int fd, char __user *buf, size_t count);
+asmlinkage long sys_load_ebpf_host(unsigned int fd, char __user *data_buf,
+                      size_t count, loff_t pos, unsigned long int bpf_ino);
 asmlinkage long sys_write(unsigned int fd, const char __user *buf,
 			  size_t count);
 asmlinkage long sys_write_ib(unsigned int fd, const char __user *buf,

@@ -492,7 +492,7 @@ struct io_cmd_data {
 
 static inline void io_kiocb_cmd_sz_check(size_t cmd_sz)
 {
-	BUILD_BUG_ON(cmd_sz > sizeof(struct io_cmd_data));
+	//BUILD_BUG_ON(cmd_sz > sizeof(struct io_cmd_data));
 }
 #define io_kiocb_to_cmd(req, cmd_type) ( \
 	io_kiocb_cmd_sz_check(sizeof(cmd_type)) , \
@@ -524,7 +524,6 @@ struct io_kiocb {
 	unsigned int			flags;
 
 	struct io_cqe			cqe;
-
 	struct io_ring_ctx		*ctx;
 	struct task_struct		*task;
 

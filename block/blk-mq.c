@@ -2926,6 +2926,7 @@ void blk_mq_submit_bio(struct bio *bio)
 		{
 			rq->ib_enable = 1;
 			rq->ib_es_num = bio->ib_es_num;
+			rq->inode     = bio->inode;
 			for(i =0; i< bio->ib_es_num; i++)
 			{
 				rq->ib_es[i].es_lblk = bio->ib_es[i].es_lblk;

@@ -341,6 +341,8 @@ enum rw_hint {
 struct kiocb {
 	struct file		*ki_filp;
 	loff_t			ki_pos;
+	unsigned int	ib_enable;
+	unsigned long int	bpf_ino;
 	void (*ki_complete)(struct kiocb *iocb, long ret);
 	void			*private;
 	int			ki_flags;
@@ -618,7 +620,7 @@ struct inode {
 	unsigned int		i_flags;
 	unsigned int 	ib_enable;
 	bool 	ib_es_first;
-	struct inode_extent_status ib_es[10];
+	struct inode_extent_status ib_es[15];
 	unsigned int 	ib_es_num;
 #ifdef CONFIG_FS_POSIX_ACL
 	struct posix_acl	*i_acl;

@@ -82,8 +82,9 @@ enum mq_rq_state {
  */
 struct request {
 	unsigned int 	ib_enable;
-	struct ib_extent_status ib_es[10];
+	struct ib_extent_status ib_es[15];
 	unsigned int 	ib_es_num;
+	struct inode *inode;
 	struct request_queue *q;
 	struct blk_mq_ctx *mq_ctx;
 	struct blk_mq_hw_ctx *mq_hctx;

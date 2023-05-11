@@ -2,7 +2,7 @@
 VERSION = 6
 PATCHLEVEL = 1
 SUBLEVEL = 0
-EXTRAVERSION = -rc8-ib-guset
+EXTRAVERSION = -guest
 NAME = Hurr durr I'ma ninja sloth
 
 # *DOCUMENTATION*

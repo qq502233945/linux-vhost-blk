@@ -16,7 +16,7 @@
 #include <linux/blk-mq-virtio.h>
 #include <linux/numa.h>
 #include <uapi/linux/virtio_ring.h>
-
+#include <linux/fs.h>
 #define PART_BITS 4
 #define VQ_NAME_LEN 16
 #define MAX_DISCARD_SEGMENTS 256u
@@ -272,7 +272,7 @@ static inline void virtblk_request_done(struct request *req)
 	blk_mq_end_request(req, virtblk_result(vbr));
 }
 
-static void virtblk_done(struct virtqueue *vq)
+void virtblk_done(struct virtqueue *vq)
 {
 	struct virtio_blk *vblk = vq->vdev->priv;
 	bool req_done = false;
@@ -280,13 +280,29 @@ static void virtblk_done(struct virtqueue *vq)
 	struct virtblk_req *vbr;
 	unsigned long flags;
 	unsigned int len;
-
+	int i=0;
 	spin_lock_irqsave(&vblk->vqs[qid].lock, flags);
 	do {
 		virtqueue_disable_cb(vq);
 		while ((vbr = virtqueue_get_buf(vblk->vqs[qid].vq, &len)) != NULL) {
 			struct request *req = blk_mq_rq_from_pdu(vbr);
-
+			if(req->ib_enable == 1&&req->cmd_flags == 0)
+			{
+				if(req->inode->ib_enable==1)
+				{
+					for(i=0;i<req->ib_es_num;i++)
+					{
+						printk("The kye is %u, vhr key is %u, vhr found is %u, vhr value is %u\n", req->inode->ib_es[i].es_lblk, \
+						vbr->out_hdr.ib_es[i].es_lblk, \
+						vbr->out_hdr.ib_es[i].es_len, \
+						vbr->out_hdr.ib_es[i].es_pblk);
+						//update the inode result;
+						req->inode->ib_es[i].es_len = vbr->out_hdr.ib_es[i].es_len;
+						req->inode->ib_es[i].es_pblk = vbr->out_hdr.ib_es[i].es_pblk;
+					}
+					
+				}
+			}
 			if (likely(!blk_should_fake_timeout(req->q)))
 				blk_mq_complete_request(req);
 			req_done = true;

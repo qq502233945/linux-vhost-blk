@@ -702,6 +702,21 @@ ssize_t vfs_read_ib(struct file *file, char __user *data_buf, size_t count, loff
 	else
 		ret = -EINVAL;
 	if (ret > 0) {
+	/*result is ok update the result */
+	if(ib_enable == 1)
+	{
+		for(i=0;i<tmp.n_keys;i++)
+		{
+			tmp.values[i].found = inode->ib_es[i].es_len; // use len to identiy whether the key is found;
+			tmp.values[i].value = (__u8)inode->ib_es[i].es_pblk;; // use pblk to trans the value in db;
+		}
+		if (copy_to_user(scratch_buf, &tmp , sizeof(struct ScatterGatherQuery)))
+		{
+			printk("put Query Failed!\n");
+			return -EFAULT;
+		}
+
+	}
 		fsnotify_access(file);
 		add_rchar(current, ret);
 	}
@@ -843,6 +858,82 @@ SYSCALL_DEFINE4(pwrite64, unsigned int, fd, const char __user *, buf,
 {
 	return ksys_pwrite64(fd, buf, count, pos);
 }
+
+static ssize_t new_sync_read_load_ebpf(struct file *filp, char __user *data_buf, size_t len, loff_t *ppos, unsigned long int bpf_ino)
+{
+	struct iovec iov = { .iov_base = data_buf, .iov_len = len };
+	struct kiocb kiocb;
+	struct iov_iter iter;
+	ssize_t ret = -EBADF;
+	init_sync_kiocb(&kiocb, filp);
+	kiocb.ki_pos = (ppos ? *ppos : 0);
+	kiocb.ib_enable = true;
+	kiocb.bpf_ino = bpf_ino;
+	iov_iter_init(&iter, READ, &iov, 1, len);
+	ret = call_read_iter(filp, &kiocb, &iter);
+	BUG_ON(ret == -EIOCBQUEUED);
+	if (ppos)
+		*ppos = kiocb.ki_pos;
+	return ret;
+}
+
+
+ssize_t vfs_load_ebpf_host(struct file *file, char __user *data_buf, size_t count, loff_t *pos, unsigned long int bpf_ino)
+{
+	ssize_t ret;
+
+	if (!(file->f_mode & FMODE_READ))
+		return -EBADF;
+	if (!(file->f_mode & FMODE_CAN_READ))
+		return -EINVAL;
+	if (unlikely(!access_ok(data_buf, count)))
+		return -EFAULT;
+
+	ret = rw_verify_area(READ, file, pos, count);
+	if (ret)
+		return ret;
+	if (count > MAX_RW_COUNT)
+		count =  MAX_RW_COUNT;
+
+	if (file->f_op->read)
+		ret = file->f_op->read(file, data_buf, count, pos);
+	else if (file->f_op->read_iter)
+		ret = new_sync_read_load_ebpf(file, data_buf, count, pos, bpf_ino);
+	else
+		ret = -EINVAL;
+	if (ret > 0) {
+		fsnotify_access(file);
+		add_rchar(current, ret);
+	}
+	inc_syscr(current);
+	return ret;
+}
+ssize_t ksys_load_ebpf_host(unsigned int fd, char __user *data_buf,
+                      size_t count, loff_t pos, unsigned long int bpf_ino)
+{
+	struct fd f;
+	ssize_t ret = -EBADF;
+
+	if (pos < 0)
+		return -EINVAL;
+
+	f = fdget(fd);
+	if (f.file) {
+		ret = -ESPIPE;
+		if (f.file->f_mode & FMODE_PREAD)
+			ret = vfs_load_ebpf_host(f.file, data_buf, count, &pos, bpf_ino);
+		fdput(f);
+	}
+
+	return ret;
+}
+SYSCALL_DEFINE5(load_ebpf_host, unsigned int, fd, char __user *, data_buf,
+			size_t, count, loff_t, pos, unsigned long int, bpf_ino)
+{
+	return ksys_load_ebpf_host(fd, data_buf, count, pos, bpf_ino);
+}
+
+
 
 #if defined(CONFIG_COMPAT) && defined(__ARCH_WANT_COMPAT_PWRITE64)
 COMPAT_SYSCALL_DEFINE5(pwrite64, unsigned int, fd, const char __user *, buf,

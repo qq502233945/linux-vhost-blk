@@ -256,8 +256,9 @@ struct ib_extent_status {
  */
 struct bio {
 	unsigned int 	ib_enable;
-	struct ib_extent_status ib_es[10];
+	struct ib_extent_status ib_es[15];
 	unsigned int 	ib_es_num;
+	struct inode *inode;
 	struct bio		*bi_next;	/* request queue link */
 	struct block_device	*bi_bdev;
 	blk_opf_t		bi_opf;		/* bottom bits REQ_OP, top bits

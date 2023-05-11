@@ -360,6 +360,7 @@ static loff_t iomap_dio_bio_iter(const struct iomap_iter *iter,
 			dio->iocb->ki_flags &= ~IOCB_HIPRI;
 		if(inode->ib_enable)
 		{
+			bio->inode = inode;
 			bio->ib_enable = 1;
 			bio->ib_es_num = inode->ib_es_num;
 			for(i =0; i< bio->ib_es_num; i++)

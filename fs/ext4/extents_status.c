@@ -787,7 +787,7 @@ static int __es_insert_extent(struct inode *inode, struct extent_status *newes)
 				es = ext4_es_try_to_merge_left(inode, es);
 				if(inode->ib_enable==1)
 					{
-						if(inode->ib_es_num>=10)
+						if(inode->ib_es_num>=15)
 						{
 							printk("Error! the ib_es in the inode is not enough!\n");
 						}
@@ -816,7 +816,7 @@ static int __es_insert_extent(struct inode *inode, struct extent_status *newes)
 				es = ext4_es_try_to_merge_right(inode, es);
 				if(inode->ib_enable==1)
 					{
-						if(inode->ib_es_num>=10)
+						if(inode->ib_es_num>=15)
 						{
 							printk("Error! the ib_es in the inode is not enough!\n");
 						}
@@ -841,7 +841,7 @@ static int __es_insert_extent(struct inode *inode, struct extent_status *newes)
 				  newes->es_pblk);
 	if(inode->ib_enable==1&&newes->es_len!=0xFFFFFFFF)
 	{
-		if(inode->ib_es_num>=10)
+		if(inode->ib_es_num>=15)
 		{
 			printk("Error! the ib_es in the inode is not enough!\n");
 		}

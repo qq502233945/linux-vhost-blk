@@ -590,6 +590,25 @@ struct fsnotify_mark_connector;
 #define XRP_BLOCK_SIZE	(1 << XRP_BLOCK_SHIFT)
 
 
+typedef unsigned long meta__t;
+typedef unsigned long key__t;
+typedef unsigned char val__t[64];
+typedef unsigned long ptr__t;
+
+struct MaybeValue {
+    char found;
+    val__t value;
+};
+struct ScatterGatherQuery {
+    ptr__t root_pointer;
+    ptr__t value_ptr;
+    unsigned int state_flags;
+    int current_index;
+    int n_keys;
+    key__t keys[32];
+    struct MaybeValue values[32];
+};
+
 struct xrp_tree {
 	struct rb_root   rb_root;
 	__u64 version;

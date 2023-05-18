@@ -678,9 +678,6 @@ static inline bool nvme_try_complete_req(struct request *req, __le16 status,
 {
 	struct nvme_request *rq = nvme_req(req);
 	struct nvme_ctrl *ctrl = rq->ctrl;
-	if (req->xrp_command) {
-		req->xrp_command = NULL;
-	}
 	if (!(ctrl->quirks & NVME_QUIRK_SKIP_CID_GEN))
 		rq->genctr++;
 

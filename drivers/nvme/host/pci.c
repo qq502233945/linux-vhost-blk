@@ -916,7 +916,8 @@ static blk_status_t nvme_prep_rq(struct nvme_dev *dev, struct request *req)
 			goto out_unmap_data;
 	}
 	if (req->bio && req->bio->xrp_enabled) {
-			req->xrp_command = &iod->cmd;
+		// printk("nvme_prep_rq here is ok \n");
+		req->xrp_command = &iod->cmd;
 	}
 	blk_mq_start_request(req);
 	return BLK_STS_OK;
@@ -961,8 +962,7 @@ static blk_status_t nvme_queue_rq(struct blk_mq_hw_ctx *hctx,
 
 static void nvme_submit_cmds(struct nvme_queue *nvmeq, struct request **rqlist)
 {
-	unsigned long flags;
-	spin_lock_irqsave(&nvmeq->sq_lock,flags);
+	spin_lock(&nvmeq->sq_lock);
 	while (!rq_list_empty(*rqlist)) {
 		struct request *req = rq_list_pop(rqlist);
 		struct nvme_iod *iod = blk_mq_rq_to_pdu(req);
@@ -970,7 +970,7 @@ static void nvme_submit_cmds(struct nvme_queue *nvmeq, struct request **rqlist)
 		nvme_sq_copy_cmd(nvmeq, &iod->cmd);
 	}
 	nvme_write_sq_db(nvmeq, true);
-	spin_unlock_irqrestore(&nvmeq->sq_lock,flags);
+	spin_unlock(&nvmeq->sq_lock);
 }
 
 static void nvme_submit_cmd(struct nvme_queue *nvmeq, struct nvme_command *cmd,
@@ -979,7 +979,7 @@ static void nvme_submit_cmd(struct nvme_queue *nvmeq, struct nvme_command *cmd,
 	unsigned long flags;
 	spin_lock_irqsave(&nvmeq->sq_lock, flags);
 	memcpy(nvmeq->sq_cmds + (nvmeq->sq_tail << nvmeq->sqes),
-	       cmd, sizeof(*cmd));
+	       absolute_pointer(cmd), sizeof(*cmd));
 	if (++nvmeq->sq_tail == nvmeq->q_depth)
 		nvmeq->sq_tail = 0;
 	nvme_write_sq_db(nvmeq, write_sq);
@@ -1125,7 +1125,6 @@ static inline void nvme_handle_cqe(struct nvme_queue *nvmeq,
 			command_id, le16_to_cpu(cqe->sq_id));
 		return;
 	}
-
 	trace_nvme_sq(req, cqe->sq_head, nvmeq->sq_tail);
 	if (!req->bio || !req->bio->xrp_enabled) {
 	/* normal completion path */
@@ -1135,6 +1134,7 @@ static inline void nvme_handle_cqe(struct nvme_queue *nvmeq,
 			nvme_pci_complete_rq(req);
 	} else {
 		/* ebpf enabled */
+		printk("nvme_handle_cqe: step 3\n");
 		struct bpf_prog *ebpf_prog;
 		struct bpf_xrp_kern ebpf_context;
 		u32 ebpf_return;
@@ -1149,15 +1149,26 @@ static inline void nvme_handle_cqe(struct nvme_queue *nvmeq,
 		// xrp_retrieve_mapping(req->bio->xrp_inode, file_offset, data_len, &mapping);
 		// atomic_long_add(ktime_sub(ktime_get(), extent_lookup_start), &xrp_extent_lookup_time);
 		// atomic_long_inc(&xrp_extent_lookup_count);
-		if (req->bio->xrp_count > 1 && req->bio->xrp_inode->i_op == &ext4_file_inode_operations) {
+		if(req->bio->xrp_count > 20)
+		{
+			printk("nvme_handle_cqe: step 5\n");
+			if (!nvme_try_complete_req(req, cqe->status, cqe->result) &&
+				!blk_mq_add_to_batch(req, iob, nvme_req(req)->status,
+							nvme_pci_complete_batch))
+				nvme_pci_complete_rq(req);
+			return;
+		}
+		// if (req->bio->xrp_count > 1 && req->bio->xrp_inode->i_op == &ext4_file_inode_operations) {
+		if (req->bio->xrp_count > 1) {
 			file_offset = req->bio->xrp_file_offset;
 			data_len = 512;
-
+			printk("nvme_handle_cqe: step 6\n");
 			extent_lookup_start = ktime_get();
 			xrp_retrieve_mapping(req->bio->xrp_inode, file_offset, data_len, &mapping);
+			printk("The xrp_retrieve_mapping:exist:%1u offset:%llu len:%llu address:%llu version:%llu\n", mapping.exist,mapping.offset,mapping.len,mapping.address,mapping.version);
 			atomic_long_add(ktime_sub(ktime_get(), extent_lookup_start), &xrp_extent_lookup_time);
 			atomic_long_inc(&xrp_extent_lookup_count);
-			if (!mapping.exist || mapping.len < data_len || mapping.address & 0x1ff) {
+			if (!mapping.exist || mapping.len < data_len || mapping.address & 0x1ff ) {
 				printk("nvme_handle_cqe: failed to retrieve address mapping during verification with logical address 0x%llx, dump context\n", file_offset);
 				ebpf_dump_page((uint8_t *) ebpf_context.scratch, 4096);
 			if (!nvme_try_complete_req(req, cqe->status, cqe->result) &&
@@ -1175,6 +1186,7 @@ static inline void nvme_handle_cqe(struct nvme_queue *nvmeq,
 				return;
 			}
 		}
+		printk("nvme_handle_cqe: step 7\n");
 		memset(&ebpf_context, 0, sizeof(struct bpf_xrp_kern));
 		ebpf_context.data = page_address(bio_page(req->bio));
 		ebpf_context.scratch = page_address(virt_to_page(&req->bio->xrp_scratch_page));
@@ -1200,6 +1212,7 @@ static inline void nvme_handle_cqe(struct nvme_queue *nvmeq,
 				return;
 		}
 		if (ebpf_context.done) {
+			printk("nvme_handle_cqe: step 8\n");
 			/* finish traversal */
 			atomic_long_add(ktime_sub(ktime_get(), resubmit_start), &xrp_resubmit_leaf_time);
 			atomic_long_inc(&xrp_resubmit_leaf_count);
@@ -1213,10 +1226,13 @@ static inline void nvme_handle_cqe(struct nvme_queue *nvmeq,
 		}
 		/* address mapping */
 		file_offset = ebpf_context.next_addr[0];
+		printk("The re submit file_offset is %llu\n",file_offset);
 		data_len = 512;
 		// FIXME: support variable data_len and more than one next_addr
 		req->bio->xrp_file_offset = file_offset;
-		if (req->bio->xrp_inode->i_op == &ext4_file_inode_operations) {
+		// if (req->bio->xrp_inode->i_op == &ext4_file_inode_operations) {
+		if (req->bio->xrp_enabled) {
+			printk("nvme_handle_cqe: step 9\n");
 			extent_lookup_start = ktime_get();
 			xrp_retrieve_mapping(req->bio->xrp_inode, file_offset, data_len, &mapping);
 			atomic_long_add(ktime_sub(ktime_get(), extent_lookup_start), &xrp_extent_lookup_time);
@@ -1235,8 +1251,10 @@ static inline void nvme_handle_cqe(struct nvme_queue *nvmeq,
 			}		
 		} else {
 			/* no address translation, use direct map */
+			printk("nvme_handle_cqe: step 10\n");
 			disk_offset = file_offset;
 		}
+
 		nvme_req(req)->cmd = req->xrp_command;
 		req->bio->xrp_count += 1;
 		req->bio->bi_iter.bi_sector = (disk_offset >> 9) + req->bio->xrp_partition_start_sector;
@@ -1244,6 +1262,7 @@ static inline void nvme_handle_cqe(struct nvme_queue *nvmeq,
 		req->xrp_command->rw.slba = cpu_to_le64(nvme_sect_to_lba(req->q->queuedata, blk_rq_pos(req)));
 		atomic_long_add(ktime_sub(ktime_get(), resubmit_start), &xrp_resubmit_int_time);
 		atomic_long_inc(&xrp_resubmit_int_count);
+		printk("re used the submit logical\n");
 		nvme_submit_cmd(nvmeq, req->xrp_command, true);
 	}
 

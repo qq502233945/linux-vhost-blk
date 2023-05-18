@@ -69,6 +69,7 @@ struct vhost_blk_req {
 	unsigned int 	ib_enable;
 	struct host_extent_status ib_es[15];
 	unsigned int 	ib_es_num;
+
 	struct req_page_list inline_pl[NR_INLINE];
 	struct page *inline_page[NR_INLINE];
 	struct bio *inline_bio[NR_INLINE];
@@ -214,17 +215,6 @@ static void vhost_blk_req_done(struct bio *bio)
 {
 	int i;
 	struct vhost_blk_req *req = bio->bi_private;
-	if(req->ib_enable==1&&req->bi_opf==REQ_OP_READ)
-	{
-		for(i = 0; i<bio->xrp_scratch_page.n_keys;i++ )
-		{
-			printk("The kye is %u,  found is %u, vhr value is %u\n", bio->xrp_scratch_page.keys[i], \
-						bio->xrp_scratch_page.values[i].found, \
-						bio->xrp_scratch_page.values[i].value);
-			req->ib_es[i].es_len = bio->xrp_scratch_page.values[i].found;
-			req->ib_es[i].es_pblk = (__u64)bio->xrp_scratch_page.values[i].value;
-		}
-	}
 	req->bio_err = blk_status_to_errno(bio->bi_status);
 
 	if (atomic_dec_and_test(&req->bio_nr)) {
@@ -236,6 +226,7 @@ static void vhost_blk_req_done(struct bio *bio)
 		bpf_prog_put(bio->xrp_bpf_prog);
 		bio->xrp_bpf_prog = NULL;
 	}
+	printk("BPF prog put success!\n");
 	bio_put(bio);
 }
 
@@ -307,7 +298,7 @@ static struct page **vhost_blk_prepare_req(struct vhost_blk_req *req,
 static int vhost_blk_bio_make(struct vhost_blk_req *req,
 			      struct block_device *bdev)
 {
-	int pages_nr_total, i, j, m,ret;
+	int pages_nr_total, i, j, m,k,ret;
 	struct iovec *iov = req->iov;
 	int iov_nr = req->iov_nr;
 	struct page **pages, *page;
@@ -389,7 +380,19 @@ static int vhost_blk_bio_make(struct vhost_blk_req *req,
 							printk("iomap_dio_bio_actor: failed to get bpf prog\n");
 							bio->xrp_bpf_prog = NULL;
 							bio->xrp_enabled = false;
+							req->ib_enable = 0;
 						}
+						// else
+						// {
+						// 	printk("bpf open file success! \n");
+						// 	printk("bpf  file type is %u! \n",bio->xrp_bpf_prog->type);
+						// 	printk("bpf  file len is %u! \n",bio->xrp_bpf_prog->len);
+						// 	// for(k=0;k<bio->xrp_bpf_prog->len;k++)
+						// 	// {
+						// 	// 	printk("Ins:code:%u",bio->xrp_bpf_prog->insnsi[k]->code);
+						// 	// }
+						// }
+						
 					}
 				}
 			req->bio[bio_nr++] = bio;
@@ -487,6 +490,7 @@ static int vhost_blk_req_handle(struct vhost_virtqueue *vq,
 	req->ib_es_num = 0;
 
 	req->len	= iov_length(vq->iov, total_iov_nr) - sizeof(status);
+	printk("The req->len is %lu\n",req->len);
 	req->iov_nr	= move_iovec(vq->iov, req->iov, req->len, total_iov_nr,
 				     ARRAY_SIZE(blk_vq->iov));
 
@@ -498,7 +502,7 @@ static int vhost_blk_req_handle(struct vhost_virtqueue *vq,
 	if(hdr->ib_enable==1)
 	{
 		for(i=0;i<hdr->ib_es_num;i++){
-			// printk("The %dth es:lblk: %lu; len: %lu; pblk: %llu\n",i,hdr->ib_es[i].es_lblk,hdr->ib_es[i].es_len,hdr->ib_es[i].es_pblk);
+			
 			req->ib_es[i].es_lblk = hdr->ib_es[i].es_lblk ;
 			req->ib_es[i].es_len = hdr->ib_es[i].es_len;
 			req->ib_es[i].es_pblk = hdr->ib_es[i].es_pblk;
@@ -509,6 +513,7 @@ static int vhost_blk_req_handle(struct vhost_virtqueue *vq,
 		{
 			req->ioprio = hdr->ioprio;
 			req->type = VIRTIO_BLK_T_IN;
+			printk("start \nThe %dth key-value pair: key is: %u; found is %u\n",i,hdr->ib_es[0].es_lblk,hdr->query.found);
 		}
 	}
 	switch (hdr->type) {
@@ -642,13 +647,17 @@ static void vhost_blk_handle_host_kick(struct vhost_work *work)
 		{
 			hdr.ib_enable = req->ib_enable;
 			hdr.ib_es_num = req->ib_es_num;
-			
-			for(i=0; i<req->ib_es_num;i++ )
+			hdr.query.found = req->bio[0]->xrp_scratch_page.values[0].found;
+			if(hdr.query.found == 1)
 			{
-				hdr.ib_es[i].es_lblk = req->ib_es[i].es_lblk;
-				hdr.ib_es[i].es_len  = req->ib_es[i].es_len;
-				hdr.ib_es[i].es_pblk = req->ib_es[i].es_pblk;
+				printk("value is found\n");
+				memcpy(hdr.query.value, req->bio[0]->xrp_scratch_page.values[0].value, sizeof(val__t));
 			}
+			else
+			{
+				printk("value is not found\n");
+			}
+			
 			hdr.ioprio = req->ioprio;
 			hdr.type   = req->type;
 			hdr.sector = req->sector;

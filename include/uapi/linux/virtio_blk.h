@@ -29,6 +29,7 @@
 #include <linux/virtio_ids.h>
 #include <linux/virtio_config.h>
 #include <linux/virtio_types.h>
+#include <linux/fs.h>
 
 /* Feature bits */
 #define VIRTIO_BLK_F_SIZE_MAX	1	/* Indicates maximum segment size */
@@ -188,6 +189,7 @@ struct virtio_blk_outhdr {
 	unsigned int 	ib_enable;
 	struct host_extent_status ib_es[15];
 	unsigned int 	ib_es_num;
+	struct MaybeValue query;
 	/* VIRTIO_BLK_T* */
 	__virtio32 type;
 	/* io priority. */

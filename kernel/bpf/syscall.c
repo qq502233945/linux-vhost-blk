@@ -2671,13 +2671,22 @@ static int bpf_obj_get(const union bpf_attr *attr)
 	if (CHECK_ATTR(BPF_OBJ) || attr->bpf_fd != 0 ||
 	    attr->file_flags & ~BPF_OBJ_FLAG_MASK)
 		{
-			printk("bpf_obj_get error!\n");
 			return -EINVAL;
 		}	
 	return bpf_obj_get_user(u64_to_user_ptr(attr->pathname),
 				attr->file_flags);
 }
 
+static int bpf_obj_get_IB(const union bpf_attr *attr)
+{
+	if (CHECK_ATTR(BPF_OBJ) || attr->bpf_fd != 0 ||
+	    attr->file_flags & ~BPF_OBJ_FLAG_MASK)
+		{
+			return -EINVAL;
+		}	
+	return bpf_obj_get_user_ib((void *)(uintptr_t)(attr->pathname),
+				attr->file_flags);
+}
 void bpf_link_init(struct bpf_link *link, enum bpf_link_type type,
 		   const struct bpf_link_ops *ops, struct bpf_prog *prog)
 {
@@ -5069,6 +5078,50 @@ SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, siz
 	return __sys_bpf(cmd, USER_BPFPTR(uattr), size);
 }
 
+static int __sys_bpf_ib(bpfptr_t uattr, unsigned int size)
+{
+	union bpf_attr attr;
+	bool capable;
+	int err;
+	int cmd = BPF_OBJ_GET;
+	capable = bpf_capable() || !sysctl_unprivileged_bpf_disabled;
+
+	if (!capable)
+		return -EPERM;
+	err = bpf_check_uarg_tail_zero(uattr, sizeof(attr), size);
+	if (err)
+		return err;
+	size = min_t(u32, size, sizeof(attr));
+	/* copy attributes from user space, may be less than sizeof(bpf_attr) */
+	memset(&attr, 0, sizeof(attr));
+	if (copy_from_bpfptr(&attr, uattr, size) != 0)
+		return -EFAULT;
+	err = security_bpf(cmd, &attr, size);
+	if (err < 0)
+		return err;
+
+	err = bpf_obj_get_IB(&attr);
+	
+
+	return err;
+}
+
+SYSCALL_DEFINE1(bpf_ib_test, int , cmd)
+{
+	const char *pathname= "/sys/fs/bpf/oliver_agg";
+	const size_t attr_sz = offsetofend(union bpf_attr, file_flags);
+	union bpf_attr attr;
+
+	printk("/************testing************/\n");
+	memset(&attr, 0, attr_sz);
+	attr.pathname = (__u64)(unsigned long)((void *)pathname);
+	attr.file_flags = 0;
+	// printk("the path name is %s, flag is %d\n",attr.prog_name,attr.file_flags);
+	return  __sys_bpf_ib(KERNEL_BPFPTR(&attr),attr_sz);
+
+
+}
+
 static bool syscall_prog_is_valid_access(int off, int size,
 					 enum bpf_access_type type,
 					 const struct bpf_prog *prog,
@@ -5102,14 +5155,14 @@ BPF_CALL_3(bpf_sys_bpf, int, cmd, union bpf_attr *, attr, u32, attr_size)
 
 int bpf_obj_get_ib(const char *pathname)
 {
-	printk("bpf_obj_get_ib ing !\n");
 	const size_t attr_sz = offsetofend(union bpf_attr, file_flags);
 	union bpf_attr attr;
 	int fd;
 	memset(&attr, 0, attr_sz);
 	attr.pathname = (__u64)(unsigned long)((void *)pathname);
 	attr.file_flags = 0;
-	fd  = __sys_bpf(BPF_OBJ_GET,KERNEL_BPFPTR(&attr),attr_sz);
+	// printk("the path name is %s, flag is %d\n",attr.prog_name,attr.file_flags);
+	fd  = __sys_bpf_ib(KERNEL_BPFPTR(&attr),attr_sz);
 	return fd;
 }
 EXPORT_SYMBOL_GPL(bpf_obj_get_ib);

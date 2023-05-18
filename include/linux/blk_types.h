@@ -10,7 +10,7 @@
 #include <linux/bvec.h>
 #include <linux/device.h>
 #include <linux/ktime.h>
-
+#include <linux/fs.h>
 struct bio_set;
 struct bio;
 struct bio_integrity_payload;
@@ -250,22 +250,9 @@ typedef unsigned int blk_qc_t;
  * stacking drivers)
  */
 
-struct MaybeValue {
-    char found;
-    __u8 value;
-};
-struct ScatterGatherQuery {
-    __u32 root_pointer;
-    __u32 value_ptr;
-    unsigned int state_flags;
-    int current_index;
-    int n_keys;
-    __u32 keys[32];
-    struct MaybeValue values[32];
-};
+
 
 struct bio {
-	unsigned int 	ib_enable;
 	struct bio		*bi_next;	/* request queue link */
 	struct block_device	*bi_bdev;
 	blk_opf_t		bi_opf;		/* bottom bits REQ_OP, top bits

@@ -286,19 +286,19 @@ void virtblk_done(struct virtqueue *vq)
 		virtqueue_disable_cb(vq);
 		while ((vbr = virtqueue_get_buf(vblk->vqs[qid].vq, &len)) != NULL) {
 			struct request *req = blk_mq_rq_from_pdu(vbr);
-			if(req->ib_enable == 1&&req->cmd_flags == 0)
+			if(req->ib_enable == 1&&vbr->out_hdr.type  == 0)
 			{
 				if(req->inode->ib_enable==1)
 				{
-					for(i=0;i<req->ib_es_num;i++)
+					for(i=0;i<vbr->out_hdr.ib_es_num;i++)
 					{
-						printk("The kye is %u, vhr key is %u, vhr found is %u, vhr value is %u\n", req->inode->ib_es[i].es_lblk, \
-						vbr->out_hdr.ib_es[i].es_lblk, \
-						vbr->out_hdr.ib_es[i].es_len, \
-						vbr->out_hdr.ib_es[i].es_pblk);
+						printk("The kye is %u, vhr key is %u\n", req->inode->ib_es[i].es_lblk, \
+						vbr->out_hdr.query.found);
 						//update the inode result;
-						req->inode->ib_es[i].es_len = vbr->out_hdr.ib_es[i].es_len;
-						req->inode->ib_es[i].es_pblk = vbr->out_hdr.ib_es[i].es_pblk;
+						// req->inode->ib_es[i].es_len = vbr->out_hdr.ib_es[i].es_len;
+						// req->inode->ib_es[i].es_pblk = vbr->out_hdr.ib_es[i].es_pblk;
+						req->inode->query.found = vbr->out_hdr.query.found;
+						memcpy(&req->inode->query.value, &vbr->out_hdr.query.value, sizeof(val__t));
 					}
 					
 				}

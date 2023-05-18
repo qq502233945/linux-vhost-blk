@@ -660,7 +660,9 @@ SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)
 ssize_t vfs_read_ib(struct file *file, char __user *data_buf, size_t count, loff_t *pos, unsigned int ib_enable, char __user *scratch_buf)
 {
 	ssize_t ret;
-	struct  ScatterGatherQuery tmp;
+	struct  ScatterGatherQuery *tmp= NULL;
+	// struct page	*xrp_scratch_page;
+
 	int i;
 	struct inode *inode = file_inode(file);
 	if (!(file->f_mode & FMODE_READ))
@@ -671,7 +673,12 @@ ssize_t vfs_read_ib(struct file *file, char __user *data_buf, size_t count, loff
 		return -EFAULT;
 	if (unlikely(!access_ok(scratch_buf, PAGE_SIZE)))
 		return -EFAULT;
-
+	tmp = kmalloc(sizeof(struct ScatterGatherQuery), GFP_KERNEL); 
+	if(tmp == NULL)
+	{
+		printk("error: allo\n");
+		return -EFAULT;
+	}
 	ret = rw_verify_area(READ, file, pos, count);
 	if (ret)
 		return ret;
@@ -680,17 +687,26 @@ ssize_t vfs_read_ib(struct file *file, char __user *data_buf, size_t count, loff
 	if(ib_enable == 1)
 	{
 
-		if (copy_from_user(&tmp, scratch_buf, sizeof(struct ScatterGatherQuery)))
+		ret = copy_from_user(tmp, (struct ScatterGatherQuery *)scratch_buf, sizeof(struct ScatterGatherQuery)); 
+		if(ret) 
 		{
-			printk("Copy Query Failed!\n");
+			kfree(tmp);
+			printk("copy write mesg from user error, ret = %d\n", ret);
 			return -EFAULT;
 		}
+		// if (get_user_pages_fast(scratch_buf, 1, FOLL_WRITE, &xrp_scratch_page) != 1) {
+		// 	printk("iomap_dio_bio_actor: failed to get scratch page\n");
+			
+		// }
+
 		inode->ib_enable = 1;
-		for(i=0;i<tmp.n_keys;i++)
+		printk("the num to be search is %d!\n",tmp->n_keys);
+		inode->ib_es_num = tmp->n_keys;
+		for(i=0;i<tmp->n_keys;i++)
 		{
-			inode->ib_es[i].es_lblk = tmp.keys[i]; //use lblk to tranes the key to be search
-			inode->ib_es[i].es_len = 0; // use len to identiy whether the key is found;
-			inode->ib_es[i].es_pblk = 0; // use pblk to trans the value in db;
+			printk("the key to be search is %u!\n",tmp->keys[i]);
+
+			inode->ib_es[i].es_lblk = tmp->keys[i]; //use lblk to tranes the key to be search
 		}
 
 	}
@@ -705,12 +721,21 @@ ssize_t vfs_read_ib(struct file *file, char __user *data_buf, size_t count, loff
 	/*result is ok update the result */
 	if(ib_enable == 1)
 	{
-		for(i=0;i<tmp.n_keys;i++)
+		for(i=0;i<tmp->n_keys;i++)
 		{
-			tmp.values[i].found = inode->ib_es[i].es_len; // use len to identiy whether the key is found;
-			tmp.values[i].value = (__u8)inode->ib_es[i].es_pblk;; // use pblk to trans the value in db;
+			
+			// tmp->values[i].found = inode->ib_es[i].es_len; // use len to identiy whether the key is found;
+			// tmp->values[i].value = (__u8)inode->ib_es[i].es_pblk;; // use pblk to trans the value in db;
+			tmp->values[i].found = inode->query.found; // use len to identiy whether the key is found;
+			if(tmp->values[i].found == 1)
+			{
+				
+				memcpy(tmp->values[i].value, inode->query.value, sizeof(val__t));
+			}
+			printk("the key to be search is %u, found is %u!\n",tmp->keys[i],tmp->values[i].found);
+			
 		}
-		if (copy_to_user(scratch_buf, &tmp , sizeof(struct ScatterGatherQuery)))
+		if (copy_to_user(scratch_buf, tmp , sizeof(struct ScatterGatherQuery)))
 		{
 			printk("put Query Failed!\n");
 			return -EFAULT;
@@ -720,6 +745,8 @@ ssize_t vfs_read_ib(struct file *file, char __user *data_buf, size_t count, loff
 		fsnotify_access(file);
 		add_rchar(current, ret);
 	}
+	kfree(tmp);
+
 	inc_syscr(current);
 	return ret;
 }

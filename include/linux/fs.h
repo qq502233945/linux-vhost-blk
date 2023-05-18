@@ -592,17 +592,22 @@ struct fsnotify_mark_connector;
  * the RCU path lookup and 'stat' data) fields at the beginning
  * of the 'struct inode'
  */
+typedef unsigned long meta__t;
+typedef unsigned long key__t;
+typedef unsigned char val__t[64];
+typedef unsigned long ptr__t;
+
 struct MaybeValue {
     char found;
-    __u8 value;
+    val__t value;
 };
 struct ScatterGatherQuery {
-    __u32 root_pointer;
-    __u32 value_ptr;
+    ptr__t root_pointer;
+    ptr__t value_ptr;
     unsigned int state_flags;
     int current_index;
     int n_keys;
-    __u32 keys[32];
+    key__t keys[32];
     struct MaybeValue values[32];
 };
 
@@ -621,6 +626,8 @@ struct inode {
 	unsigned int 	ib_enable;
 	bool 	ib_es_first;
 	struct inode_extent_status ib_es[15];
+	struct MaybeValue query;
+
 	unsigned int 	ib_es_num;
 #ifdef CONFIG_FS_POSIX_ACL
 	struct posix_acl	*i_acl;

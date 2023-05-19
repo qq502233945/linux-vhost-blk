@@ -1685,7 +1685,9 @@ static long vhost_vring_set_addr(struct vhost_dev *d,
 	vq->avail = (void __user *)(unsigned long)a.avail_user_addr;
 	vq->log_addr = a.log_guest_addr;
 	vq->used = (void __user *)(unsigned long)a.used_user_addr;
-
+	printk("The desc_user_addr is %x\n",vq->desc);
+    printk("The avail_user_addr is %x\n",vq->avail);
+    printk("The used_user_addr is %x\n",vq->used);
 	return 0;
 }
 
@@ -2186,6 +2188,7 @@ static int translate_desc(struct vhost_virtqueue *vq, u64 addr, u32 len,
 	struct vhost_dev *dev = vq->dev;
 	struct vhost_iotlb *umem = dev->iotlb ? dev->iotlb : dev->umem;
 	struct iovec *_iov;
+	
 	u64 s = 0;
 	int ret = 0;
 
@@ -2217,6 +2220,9 @@ static int translate_desc(struct vhost_virtqueue *vq, u64 addr, u32 len,
 		s += size;
 		addr += size;
 		++ret;
+		printk("THE ACTUAL  addr is %x\n", _iov->iov_base);
+		printk("THE ACTUAL  len is %u\n",_iov->iov_base);
+
 	}
 
 	if (ret == -EAGAIN)
@@ -2251,7 +2257,7 @@ static int get_indirect(struct vhost_virtqueue *vq,
 	u32 len = vhost32_to_cpu(vq, indirect->len);
 	struct iov_iter from;
 	int ret, access;
-
+	int total_len = 0;
 	/* Sanity check */
 	if (unlikely(len % sizeof desc)) {
 		vq_err(vq, "Invalid length in indirect descriptor: "
@@ -2301,7 +2307,9 @@ static int get_indirect(struct vhost_virtqueue *vq,
 			access = VHOST_ACCESS_WO;
 		else
 			access = VHOST_ACCESS_RO;
-
+		printk("Host received page phy addr is %x\n", vhost64_to_cpu(vq, desc.addr));
+		printk("Host received trans len is %u\n",vhost32_to_cpu(vq, desc.len));
+		total_len += vhost32_to_cpu(vq, desc.len);
 		ret = translate_desc(vq, vhost64_to_cpu(vq, desc.addr),
 				     vhost32_to_cpu(vq, desc.len), iov + iov_count,
 				     iov_size - iov_count, access);
@@ -2330,6 +2338,7 @@ static int get_indirect(struct vhost_virtqueue *vq,
 			*out_num += ret;
 		}
 	} while ((i = next_desc(vq, &desc)) != -1);
+	printk("host received total len is %d\n",total_len);
 	return 0;
 }
 

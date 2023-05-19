@@ -500,7 +500,8 @@ static inline unsigned int virtqueue_add_desc_split(struct virtqueue *vq,
 	desc[i].flags = cpu_to_virtio16(vq->vdev, flags);
 	desc[i].addr = cpu_to_virtio64(vq->vdev, addr);
 	desc[i].len = cpu_to_virtio32(vq->vdev, len);
-
+	printk("guest phy addr is %x\n", addr);
+	printk("guest len is %u\n",len);
 	if (!indirect) {
 		next = extra[i].next;
 		desc[i].next = cpu_to_virtio16(vq->vdev, next);

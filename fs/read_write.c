@@ -494,6 +494,22 @@ static ssize_t new_sync_write(struct file *filp, const char __user *buf, size_t 
 		*ppos = kiocb.ki_pos;
 	return ret;
 }
+static ssize_t new_sync_write_test(struct file *filp, const char __user *buf, size_t len, loff_t *ppos)
+{
+	struct kiocb kiocb;
+	struct iov_iter iter;
+	ssize_t ret;
+
+	init_sync_kiocb(&kiocb, filp);
+	kiocb.ki_pos = (ppos ? *ppos : 0);
+	iov_iter_ubuf(&iter, WRITE, (void __user *)buf, len);
+
+	ret = call_write_iter_test(filp, &kiocb, &iter);
+	BUG_ON(ret == -EIOCBQUEUED);
+	if (ret > 0 && ppos)
+		*ppos = kiocb.ki_pos;
+	return ret;
+}
 
 /* caller is responsible for file_start_write/file_end_write */
 ssize_t __kernel_write_iter(struct file *file, struct iov_iter *from, loff_t *pos)
@@ -592,6 +608,37 @@ ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_
 	file_end_write(file);
 	return ret;
 }
+ssize_t vfs_write_test(struct file *file, const char __user *buf, size_t count, loff_t *pos)
+{
+	ssize_t ret;
+
+	if (!(file->f_mode & FMODE_WRITE))
+		return -EBADF;
+	if (!(file->f_mode & FMODE_CAN_WRITE))
+		return -EINVAL;
+	if (unlikely(!access_ok(buf, count)))
+		return -EFAULT;
+
+	ret = rw_verify_area(WRITE, file, pos, count);
+	if (ret)
+		return ret;
+	if (count > MAX_RW_COUNT)
+		count =  MAX_RW_COUNT;
+	file_start_write(file);
+	if (file->f_op->write)
+		ret = file->f_op->write(file, buf, count, pos);
+	else if (file->f_op->write_iter_test)
+		ret = new_sync_write_test(file, buf, count, pos);
+	else
+		ret = -EINVAL;
+	if (ret > 0) {
+		fsnotify_modify(file);
+		add_wchar(current, ret);
+	}
+	inc_syscw(current);
+	file_end_write(file);
+	return ret;
+}
 
 /* file_ppos returns &file->f_pos or NULL if file is stream */
 static inline loff_t *file_ppos(struct file *file)
@@ -634,7 +681,7 @@ ssize_t ksys_write(unsigned int fd, const char __user *buf, size_t count)
 			pos = *ppos;
 			ppos = &pos;
 		}
-		ret = vfs_write(f.file, buf, count, ppos);
+		ret = vfs_write_test(f.file, buf, count, ppos);
 		if (ret >= 0 && ppos)
 			f.file->f_pos = pos;
 		fdput_pos(f);
@@ -648,7 +695,31 @@ SYSCALL_DEFINE3(write, unsigned int, fd, const char __user *, buf,
 {
 	return ksys_write(fd, buf, count);
 }
+ssize_t ksys_write_test(unsigned int fd, const char __user *buf, size_t count)
+{
+	struct fd f = fdget_pos(fd);
+	ssize_t ret = -EBADF;
 
+	if (f.file) {
+		loff_t pos, *ppos = file_ppos(f.file);
+		if (ppos) {
+			pos = *ppos;
+			ppos = &pos;
+		}
+		ret = vfs_write_test(f.file, buf, count, ppos);
+		if (ret >= 0 && ppos)
+			f.file->f_pos = pos;
+		fdput_pos(f);
+	}
+
+	return ret;
+}
+
+SYSCALL_DEFINE3(write_test, unsigned int, fd, const char __user *, buf,
+		size_t, count)
+{
+	return ksys_write_test(fd, buf, count);
+}
 ssize_t ksys_pread64(unsigned int fd, char __user *buf, size_t count,
 		     loff_t pos)
 {

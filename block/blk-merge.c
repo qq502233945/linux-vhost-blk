@@ -509,7 +509,7 @@ static int __blk_bios_map_sg(struct request_queue *q, struct bio *bio,
 	struct bvec_iter iter;
 	int nsegs = 0;
 	bool new_bio = false;
-
+	int total_nbytes = 0;
 	for_each_bio(bio) {
 		bio_for_each_bvec(bvec, bio, iter) {
 			/*
@@ -517,6 +517,11 @@ static int __blk_bios_map_sg(struct request_queue *q, struct bio *bio,
 			 * have done bio internal merge when adding pages
 			 * to bio
 			 */
+			total_nbytes += bvec.bv_len;
+			printk("Transfoer page addr is %x\n", (unsigned long)bvec.bv_page);
+			printk("Transfoer page addr is %u\n",bvec.bv_len);
+			printk("Transfoer page addr is %u\n",bvec.bv_offset);
+			
 			if (new_bio &&
 			    __blk_segment_map_sg_merge(q, &bvec, &bvprv, sg))
 				goto next_bvec;
@@ -533,7 +538,8 @@ static int __blk_bios_map_sg(struct request_queue *q, struct bio *bio,
 			new_bio = true;
 		}
 	}
-
+	
+	printk("Total transfoer bytes is %d\n",total_nbytes);
 	return nsegs;
 }
 

@@ -253,7 +253,7 @@ static int vhost_blk_bio_make(struct vhost_blk_req *req,
 	pages_nr_total = 0;
 	for (i = 0; i < iov_nr; i++)
 		pages_nr_total += iov_num_pages(&iov[i]);
-
+	printk("The bio need %d pages\n",pages_nr_total);
 	if (pages_nr_total > NR_INLINE) {
 		pages = vhost_blk_prepare_req(req, pages_nr_total, iov_nr);
 		if (!pages)
@@ -264,7 +264,8 @@ static int vhost_blk_bio_make(struct vhost_blk_req *req,
 		pages = req->inline_page;
 		req->bio = req->inline_bio;
 	}
-
+	printk("The req sector is %lu\n",req->sector);
+	
 	req->iov_nr = 0;
 	for (i = 0; i < iov_nr; i++) {
 		int pages_nr = iov_num_pages(&iov[i]);
@@ -272,7 +273,7 @@ static int vhost_blk_bio_make(struct vhost_blk_req *req,
 		struct req_page_list *pl;
 		iov_base = (unsigned long)iov[i].iov_base;
 		iov_len  = (unsigned long)iov[i].iov_len;
-
+		printk("The %dth iov:base is %x,len is %lu\n",i,iov_base,iov_len);
 		ret = get_user_pages_fast(iov_base, pages_nr,
 					  !req->bi_opf, pages);
 		if (ret != pages_nr)
@@ -340,7 +341,8 @@ static int vhost_blk_req_submit(struct vhost_blk_req *req, struct file *file)
 	struct inode *inode = file->f_mapping->host;
 	struct block_device *bdev = I_BDEV(inode);
 	int ret;
-
+	printk("**********************\n");
+	printk("Start request processing!\n");
 	ret = vhost_blk_bio_make(req, bdev);
 	if (ret < 0)
 		return ret;

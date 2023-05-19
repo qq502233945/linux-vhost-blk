@@ -499,6 +499,8 @@ asmlinkage long sys_lseek(unsigned int fd, off_t offset,
 asmlinkage long sys_read(unsigned int fd, char __user *buf, size_t count);
 asmlinkage long sys_write(unsigned int fd, const char __user *buf,
 			  size_t count);
+asmlinkage long sys_write_test(unsigned int fd, const char __user *buf,
+			  size_t count);
 asmlinkage long sys_readv(unsigned long fd,
 			  const struct iovec __user *vec,
 			  unsigned long vlen);

@@ -65,6 +65,8 @@ struct block_device {
 	struct super_block	*bd_fsfreeze_sb;
 
 	struct partition_meta_info *bd_meta_info;
+	bool ib_enalbe;
+	struct bpf_prog		*xrp_bpf_prog;
 #ifdef CONFIG_FAIL_MAKE_REQUEST
 	bool			bd_make_it_fail;
 #endif
@@ -317,7 +319,6 @@ struct bio {
 	u64			xrp_partition_start_sector;
 	int			xrp_count;
 	struct ScatterGatherQuery 	xrp_scratch_page;
-	struct bpf_prog		*xrp_bpf_prog;
 	u64			xrp_extent_version;
 	loff_t			xrp_file_offset;
 	struct bio_vec		bi_inline_vecs[];

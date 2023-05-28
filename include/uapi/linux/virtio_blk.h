@@ -189,7 +189,6 @@ struct virtio_blk_outhdr {
 	unsigned int 	ib_enable;
 	struct host_extent_status ib_es[15];
 	unsigned int 	ib_es_num;
-	struct MaybeValue query;
 	/* VIRTIO_BLK_T* */
 	__virtio32 type;
 	/* io priority. */

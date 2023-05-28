@@ -41,14 +41,14 @@ enum {
  * Max number of bytes transferred before requeueing the job.
  * Using this limit prevents one virtqueue from starving others.
  */
-#define VHOST_DEV_WEIGHT 0x80000
+#define VHOST_DEV_WEIGHT 0x1000000
 
 /*
  * Max number of packets transferred before requeueing the job.
  * Using this limit prevents one virtqueue from starving others with
  * pkts.
  */
-#define VHOST_DEV_PKT_WEIGHT 256
+#define VHOST_DEV_PKT_WEIGHT 2048
 
 #define VHOST_BLK_VQ_MAX 16
 
@@ -69,7 +69,7 @@ struct vhost_blk_req {
 	unsigned int 	ib_enable;
 	struct host_extent_status ib_es[15];
 	unsigned int 	ib_es_num;
-
+	struct ib_mesg ibmsg;
 	struct req_page_list inline_pl[NR_INLINE];
 	struct page *inline_page[NR_INLINE];
 	struct bio *inline_bio[NR_INLINE];
@@ -104,7 +104,7 @@ struct vhost_blk_req {
 struct vhost_blk_vq {
 	struct vhost_virtqueue vq;
 	struct vhost_blk_req *req;
-	struct iovec iov[UIO_MAXIOV];
+	struct iovec iov[65536];
 	struct llist_head llhead;
 	struct vhost_work work;
 };
@@ -148,31 +148,31 @@ static int move_iovec(struct iovec *from, struct iovec *to,
 
 	return len ? -1 : moved_seg;
 }
-static int copy_iovec(struct iovec *from, struct iovec *to,
-		      size_t len, int iov_count_from, int iov_count_to)
-{
-	int moved_seg = 0, spent_seg = 0;
-	size_t size;
-	struct iovec *head;
-	head = from;
-	while (len && spent_seg < iov_count_from && moved_seg < iov_count_to) {
-		if (from->iov_len == 0) {
-			++from;
-			++spent_seg;
-			continue;
-		}
-		size = min(head->iov_len, len);
-		to->iov_base = head->iov_base;
-		to->iov_len = size;
-		len -= size;
-		++head;
-		++to;
-		++moved_seg;
-		++spent_seg;
-	}
+// static int copy_iovec(struct iovec *from, struct iovec *to,
+// 		      size_t len, int iov_count_from, int iov_count_to)
+// {
+// 	int moved_seg = 0, spent_seg = 0;
+// 	size_t size;
+// 	struct iovec *head;
+// 	head = from;
+// 	while (len && spent_seg < iov_count_from && moved_seg < iov_count_to) {
+// 		if (from->iov_len == 0) {
+// 			++from;
+// 			++spent_seg;
+// 			continue;
+// 		}
+// 		size = min(head->iov_len, len);
+// 		to->iov_base = head->iov_base;
+// 		to->iov_len = size;
+// 		len -= size;
+// 		++head;
+// 		++to;
+// 		++moved_seg;
+// 		++spent_seg;
+// 	}
 
-	return len ? -1 : moved_seg;
-}
+// 	return len ? -1 : moved_seg;
+// }
 
 static inline int iov_num_pages(struct iovec *iov)
 {
@@ -185,10 +185,10 @@ static inline int vhost_blk_set_status(struct vhost_blk_req *req, u8 status)
 {
 	struct iov_iter iter;
 	int ret;
-
-	iov_iter_init(&iter, WRITE, req->status, ARRAY_SIZE(req->status), sizeof(status));
-	ret = copy_to_iter(&status, sizeof(status), &iter);
-	if (ret != sizeof(status)) {
+	req->ibmsg.status = status;
+	iov_iter_init(&iter, WRITE, req->status, ARRAY_SIZE(req->status), sizeof(req->ibmsg));
+	ret = copy_to_iter(&req->ibmsg, sizeof(req->ibmsg), &iter);
+	if (ret != sizeof(req->ibmsg)) {
 		vq_err(&req->blk_vq->vq, "Failed to write status\n");
 		return -EFAULT;
 	}
@@ -221,12 +221,6 @@ static void vhost_blk_req_done(struct bio *bio)
 		llist_add(&req->llnode, &req->blk_vq->llhead);
 		vhost_work_vqueue(&req->blk_vq->vq, &req->blk_vq->work);
 	}
-	if(bio->xrp_enabled)
-	{
-		bpf_prog_put(bio->xrp_bpf_prog);
-		bio->xrp_bpf_prog = NULL;
-	}
-	printk("BPF prog put success!\n");
 	bio_put(bio);
 }
 
@@ -370,15 +364,21 @@ static int vhost_blk_bio_make(struct vhost_blk_req *req,
 						{
 							bio->xrp_scratch_page.keys[m] = req->ib_es[m].es_lblk;
 						}
-						int bpf_fd = bpf_obj_get_ib("/sys/fs/bpf/oliver_agg");
-						if(bpf_fd < 0)
+
+						if(!bdev->ib_enalbe)
 						{
-							printk("bpf open error \n");
+							int bpf_fd = bpf_obj_get_ib("/sys/fs/bpf/oliver_agg");
+							if(bpf_fd < 0)
+							{
+								printk("bpf open error \n");
+							}
+							bdev->xrp_bpf_prog = bpf_prog_get_type(bpf_fd, BPF_PROG_TYPE_XRP);
+							bdev->ib_enalbe = 1;
 						}
-						bio->xrp_bpf_prog = bpf_prog_get_type(bpf_fd, BPF_PROG_TYPE_XRP);
-						if (IS_ERR(bio->xrp_bpf_prog)) {
+						if (IS_ERR(bdev->xrp_bpf_prog)) {
 							printk("iomap_dio_bio_actor: failed to get bpf prog\n");
-							bio->xrp_bpf_prog = NULL;
+							bdev->xrp_bpf_prog = NULL;
+							bdev->ib_enalbe = false;
 							bio->xrp_enabled = false;
 							req->ib_enable = 0;
 						}
@@ -479,7 +479,7 @@ static int vhost_blk_req_handle(struct vhost_virtqueue *vq,
 	struct iov_iter iter;
 	int ret, len;
 	int i;
-	u8 status;
+	struct ib_mesg ibmsg;
 	req		= &blk_vq->req[head];
 	req->ib_enable = 0;
 	req->blk_vq	= blk_vq;
@@ -489,14 +489,12 @@ static int vhost_blk_req_handle(struct vhost_virtqueue *vq,
 	req->iov	= blk_vq->iov;
 	req->ib_es_num = 0;
 
-	req->len	= iov_length(vq->iov, total_iov_nr) - sizeof(status);
-	printk("The req->len is %lu\n",req->len);
+	req->len	= iov_length(vq->iov, total_iov_nr) - sizeof(ibmsg);
 	req->iov_nr	= move_iovec(vq->iov, req->iov, req->len, total_iov_nr,
 				     ARRAY_SIZE(blk_vq->iov));
 
-	ret = move_iovec(vq->iov, req->status, sizeof(status), total_iov_nr,
+	ret = move_iovec(vq->iov, req->status, sizeof(ibmsg), total_iov_nr,
 			 ARRAY_SIZE(req->status));
-	ret = 	move_iovec(hdr_iovec_copy, req->vbr_copy, sizeof(struct virtio_blk_outhdr), ARRAY_SIZE(req->vbr_copy), ARRAY_SIZE(req->vbr_copy));
 	if (ret < 0 || req->iov_nr < 0)
 		return -EINVAL;
 	if(hdr->ib_enable==1)
@@ -513,7 +511,7 @@ static int vhost_blk_req_handle(struct vhost_virtqueue *vq,
 		{
 			req->ioprio = hdr->ioprio;
 			req->type = VIRTIO_BLK_T_IN;
-			printk("start \nThe %dth key-value pair: key is: %u; found is %u\n",i,hdr->ib_es[0].es_lblk,hdr->query.found);
+			// printk("start \nThe %dth key-value pair: key is: %u\n",i,hdr->ib_es[0].es_lblk);
 		}
 	}
 	switch (hdr->type) {
@@ -533,16 +531,16 @@ static int vhost_blk_req_handle(struct vhost_virtqueue *vq,
 		len = snprintf(id, VIRTIO_BLK_ID_BYTES, "vhost-blk%d", blk->index);
 		iov_iter_init(&iter, WRITE, req->iov, req->iov_nr, req->len);
 		ret = copy_to_iter(id, len, &iter);
-		status = ret != len ? VIRTIO_BLK_S_IOERR : VIRTIO_BLK_S_OK;
-		ret = vhost_blk_set_status(req, status);
+		ibmsg.status = ret != len ? VIRTIO_BLK_S_IOERR : VIRTIO_BLK_S_OK;
+		ret = vhost_blk_set_status(req, ibmsg.status);
 		if (ret)
 			break;
 		vhost_add_used_and_signal(&blk->dev, vq, head, len);
 		break;
 	default:
 	vq_err(vq, "Unsupported request type %d\n", hdr->type);
-		status = VIRTIO_BLK_S_UNSUPP;
-		ret = vhost_blk_set_status(req, status);
+		ibmsg.status = VIRTIO_BLK_S_UNSUPP;
+		ret = vhost_blk_set_status(req, ibmsg.status);
 		if (ret)
 			break;
 		vhost_add_used_and_signal(&blk->dev, vq, head, 0);
@@ -587,10 +585,7 @@ static void vhost_blk_handle_guest_kick(struct vhost_work *work)
 			}
 			break;
 		}
-		ret = copy_iovec(vq->iov, hdr_iovec_copy, sizeof(hdr), in + out, ARRAY_SIZE(hdr_iovec_copy));
-		if (ret < 0) {
-			printk("vhost_blk_handle_guest_kick, iovec copy failure!\n");
-		}
+
 		ret = move_iovec(vq->iov, hdr_iovec, sizeof(hdr), in + out, ARRAY_SIZE(hdr_iovec));
 		if (ret < 0) {
 			vq_err(vq, "virtio_blk_hdr is too split!");
@@ -628,7 +623,7 @@ static void vhost_blk_handle_host_kick(struct vhost_work *work)
 	struct llist_node *llnode;
 	struct vhost_blk *blk = NULL;
 	bool added, zero;
-	u8 status;
+	struct ib_mesg ibmsg;
 	int ret;
 	int i;
 	blk_vq = container_of(work, struct vhost_blk_vq, work);
@@ -645,27 +640,20 @@ static void vhost_blk_handle_host_kick(struct vhost_work *work)
 		vhost_blk_req_umap(req);
 		if(req->ib_enable==1&&req->bi_opf==REQ_OP_READ)
 		{
-			hdr.ib_enable = req->ib_enable;
-			hdr.ib_es_num = req->ib_es_num;
-			hdr.query.found = req->bio[0]->xrp_scratch_page.values[0].found;
-			if(hdr.query.found == 1)
+			req->ibmsg.query.found = req->bio[0]->xrp_scratch_page.values[0].found;
+			if(req->ibmsg.query.found == 1)
 			{
-				printk("value is found\n");
-				memcpy(hdr.query.value, req->bio[0]->xrp_scratch_page.values[0].value, sizeof(val__t));
+				// printk("value is found\n");
+				memcpy(req->ibmsg.query.value, req->bio[0]->xrp_scratch_page.values[0].value, sizeof(val__t));
 			}
 			else
 			{
 				printk("value is not found\n");
 			}
-			
-			hdr.ioprio = req->ioprio;
-			hdr.type   = req->type;
-			hdr.sector = req->sector;
-			vhost_blk_set_vbr(req, &hdr);
 		}
 
-		status = req->bio_err == 0 ?  VIRTIO_BLK_S_OK : VIRTIO_BLK_S_IOERR;
-		ret = vhost_blk_set_status(req, status);
+		ibmsg.status = req->bio_err == 0 ?  VIRTIO_BLK_S_OK : VIRTIO_BLK_S_IOERR;
+		ret = vhost_blk_set_status(req, ibmsg.status);
 		if (unlikely(ret))
 			continue;
 
@@ -749,7 +737,7 @@ static int vhost_blk_open(struct inode *inode, struct file *file)
 	spin_lock_init(&blk->flush_lock);
 	init_waitqueue_head(&blk->flush_wait);
 
-	vhost_dev_init(&blk->dev, vqs, VHOST_BLK_VQ_MAX, UIO_MAXIOV,
+	vhost_dev_init(&blk->dev, vqs, VHOST_BLK_VQ_MAX, 65536,
 		       VHOST_DEV_WEIGHT, VHOST_DEV_PKT_WEIGHT, true, NULL);
 	file->private_data = blk;
 

@@ -402,7 +402,7 @@ void xrp_sync_ext4_extent(struct inode *inode, struct host_extent_status *newes)
 	if (ret) {
 		printk("xrp: failed to insert extent\n");
 	}
-	xrp_print_tree(inode);
+	// xrp_print_tree(inode);
 	// printk("**************************\n");
 }
 
@@ -413,8 +413,6 @@ void xrp_print_tree(struct inode *inode)
 	unsigned long num_extents = 0;
 
 
-	printk("xrp extent tree: (sizeof(struct xrp_extent)=%ld)\n",
-	       sizeof(struct xrp_extent));
 	root = &inode->i_es_tree.rb_root;
 	if (!root)
 		goto out;

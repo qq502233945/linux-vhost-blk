@@ -750,6 +750,11 @@ struct inode {
 	void			*i_private; /* fs or device private pointer */
 } __randomize_layout;
 
+struct ib_mesg {
+	__u8 status;
+	struct MaybeValue query;
+};
+
 struct host_extent_status {
 	__u32 es_lblk;	/* first logical block extent covers */
 	__u32 es_len;	/* length of extent in block */

@@ -2922,19 +2922,23 @@ void blk_mq_submit_bio(struct bio *bio)
 		blk_insert_flush(rq);
 		return;
 	}
-	if(bio->ib_enable)
+	if(bio->inode!=NULL)
+	{
+		if(bio->inode->ib_enable)
 		{
 			rq->ib_enable = 1;
-			rq->ib_es_num = bio->ib_es_num;
+			rq->ib_es_num = bio->inode->ib_es_num;
 			rq->inode     = bio->inode;
-			for(i =0; i< bio->ib_es_num; i++)
+			for(i =0; i<  bio->inode->ib_es_num; i++)
 			{
-				rq->ib_es[i].es_lblk = bio->ib_es[i].es_lblk;
-				rq->ib_es[i].es_len = bio->ib_es[i].es_len;
-				rq->ib_es[i].es_pblk = bio->ib_es[i].es_pblk;
+				rq->ib_es[i].es_lblk = bio->inode->ib_es[i].es_lblk;
+				rq->ib_es[i].es_len = bio->inode->ib_es[i].es_len;
+				rq->ib_es[i].es_pblk = bio->inode->ib_es[i].es_pblk;
 			}
-			bio->ib_es_num = 0;
+			bio->inode->ib_es_num=0;
 		}
+	}
+
 
 	if (plug)
 		blk_add_rq_to_plug(plug, rq);

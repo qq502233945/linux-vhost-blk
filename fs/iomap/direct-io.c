@@ -363,13 +363,13 @@ static loff_t iomap_dio_bio_iter(const struct iomap_iter *iter,
 			bio->inode = inode;
 			bio->ib_enable = 1;
 			bio->ib_es_num = inode->ib_es_num;
-			for(i =0; i< bio->ib_es_num; i++)
-			{
-				bio->ib_es[i].es_lblk = inode->ib_es[i].es_lblk;
-				bio->ib_es[i].es_len = inode->ib_es[i].es_len;
-				bio->ib_es[i].es_pblk = inode->ib_es[i].es_pblk;
-			}
-			inode->ib_es_num = 0;
+			// for(i =0; i< bio->ib_es_num; i++)
+			// {
+			// 	bio->ib_es[i].es_lblk = inode->ib_es[i].es_lblk;
+			// 	bio->ib_es[i].es_len = inode->ib_es[i].es_len;
+			// 	bio->ib_es[i].es_pblk = inode->ib_es[i].es_pblk;
+			// }
+			// inode->ib_es_num = 0;
 		}
 		
 		iomap_dio_submit_bio(iter, dio, bio, pos);

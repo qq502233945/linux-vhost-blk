@@ -700,11 +700,11 @@ ssize_t vfs_read_ib(struct file *file, char __user *data_buf, size_t count, loff
 		// }
 
 		inode->ib_enable = 1;
-		printk("the num to be search is %d!\n",tmp->n_keys);
+		//printk("the num to be search is %d!\n",tmp->n_keys);
 		inode->ib_es_num = tmp->n_keys;
 		for(i=0;i<tmp->n_keys;i++)
 		{
-			printk("the key to be search is %u!\n",tmp->keys[i]);
+			// printk("the key to be search is %u!\n",tmp->keys[i]);
 
 			inode->ib_es[i].es_lblk = tmp->keys[i]; //use lblk to tranes the key to be search
 		}
@@ -732,7 +732,7 @@ ssize_t vfs_read_ib(struct file *file, char __user *data_buf, size_t count, loff
 				
 				memcpy(tmp->values[i].value, inode->query.value, sizeof(val__t));
 			}
-			printk("the key to be search is %u, found is %u!\n",tmp->keys[i],tmp->values[i].found);
+			// printk("the key to be search is %u, found is %u!\n",tmp->keys[i],tmp->values[i].found);
 			
 		}
 		if (copy_to_user(scratch_buf, tmp , sizeof(struct ScatterGatherQuery)))

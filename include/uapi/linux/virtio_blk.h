@@ -179,6 +179,10 @@ struct virtio_blk_config {
 #define VIRTIO_BLK_T_BARRIER	0x80000000
 #endif /* !VIRTIO_BLK_NO_LEGACY */
 
+struct ib_mesg {
+	__u8 status;
+	struct MaybeValue query;
+};
 /*
  * This comes first in the read scatter-gather list.
  * For legacy virtio, if VIRTIO_F_ANY_LAYOUT is not negotiated,
@@ -193,7 +197,7 @@ struct virtio_blk_outhdr {
 	unsigned int 	ib_enable;
 	struct host_extent_status ib_es[15];
 	unsigned int 	ib_es_num;
-	struct MaybeValue query;
+	
 	/* VIRTIO_BLK_T* */
 	__virtio32 type;
 	/* io priority. */

@@ -84,14 +84,14 @@ struct virtio_blk {
 
 struct virtblk_req {
 	struct virtio_blk_outhdr out_hdr;
-	u8 status;
+	struct ib_mesg ibmsg;
 	struct sg_table sg_table;
 	struct scatterlist sg[];
 };
 
 static inline blk_status_t virtblk_result(struct virtblk_req *vbr)
 {
-	switch (vbr->status) {
+	switch (vbr->ibmsg.status) {
 	case VIRTIO_BLK_S_OK:
 		return BLK_STS_OK;
 	case VIRTIO_BLK_S_UNSUPP:
@@ -124,7 +124,7 @@ static int virtblk_add_req(struct virtqueue *vq, struct virtblk_req *vbr)
 			sgs[num_out + num_in++] = vbr->sg_table.sgl;
 	}
 
-	sg_init_one(&status, &vbr->status, sizeof(vbr->status));
+	sg_init_one(&status, &vbr->ibmsg, sizeof(vbr->ibmsg));
 	sgs[num_out + num_in++] = &status;
 
 	return virtqueue_add_sgs(vq, sgs, num_out, num_in, vbr, GFP_ATOMIC);
@@ -286,19 +286,20 @@ void virtblk_done(struct virtqueue *vq)
 		virtqueue_disable_cb(vq);
 		while ((vbr = virtqueue_get_buf(vblk->vqs[qid].vq, &len)) != NULL) {
 			struct request *req = blk_mq_rq_from_pdu(vbr);
+		
 			if(req->ib_enable == 1&&vbr->out_hdr.type  == 0)
 			{
 				if(req->inode->ib_enable==1)
 				{
 					for(i=0;i<vbr->out_hdr.ib_es_num;i++)
 					{
-						printk("The kye is %u, vhr key is %u\n", req->inode->ib_es[i].es_lblk, \
-						vbr->out_hdr.query.found);
+						// printk("The kye is %u, found %u\n", req->inode->ib_es[i].es_lblk, \
+						// vbr->ibmsg.query.found);
 						//update the inode result;
 						// req->inode->ib_es[i].es_len = vbr->out_hdr.ib_es[i].es_len;
 						// req->inode->ib_es[i].es_pblk = vbr->out_hdr.ib_es[i].es_pblk;
-						req->inode->query.found = vbr->out_hdr.query.found;
-						memcpy(&req->inode->query.value, &vbr->out_hdr.query.value, sizeof(val__t));
+						req->inode->query.found = vbr->ibmsg.query.found;
+						memcpy(&req->inode->query.value, &vbr->ibmsg.query.value, sizeof(val__t));
 					}
 					
 				}
@@ -889,7 +890,7 @@ static int virtblk_poll(struct blk_mq_hw_ctx *hctx, struct io_comp_batch *iob)
 		struct request *req = blk_mq_rq_from_pdu(vbr);
 
 		found++;
-		if (!blk_mq_add_to_batch(req, iob, vbr->status,
+		if (!blk_mq_add_to_batch(req, iob, vbr->ibmsg.status,
 						virtblk_complete_batch))
 			blk_mq_complete_request(req);
 	}

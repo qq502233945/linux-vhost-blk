@@ -14,7 +14,7 @@
  */
 
 #include <kvm/iodev.h>
-
+#include <linux/bpf.h>
 #include <linux/kvm_host.h>
 #include <linux/kvm.h>
 #include <linux/module.h>
@@ -52,19 +52,20 @@
 #include <linux/lockdep.h>
 #include <linux/kthread.h>
 #include <linux/suspend.h>
-
+#include <linux/err.h>
 #include <asm/processor.h>
 #include <asm/ioctl.h>
 #include <linux/uaccess.h>
-
+#include <linux/fs.h>
 #include "coalesced_mmio.h"
 #include "async_pf.h"
 #include "kvm_mm.h"
 #include "vfio.h"
-
+#include "qemu.h"
+#include <linux/eventfd.h>
 #define CREATE_TRACE_POINTS
 #include <trace/events/kvm.h>
-
+#include <linux/syscalls.h>
 #include <linux/kvm_dirty_ring.h>
 
 /* Worst case buffer size needed for holding an integer. */
@@ -5213,11 +5214,183 @@ static int kvm_io_bus_get_first_dev(struct kvm_io_bus *bus,
 	return off;
 }
 
+static inline size_t
+iov_to_buf(const struct iovec *iov, const unsigned int iov_cnt,
+           size_t offset, void *buf, size_t bytes)
+{
+    if ( iov_cnt && offset <= iov[0].iov_len && bytes <= iov[0].iov_len - offset)
+        {
+			if (copy_from_user(buf, iov[0].iov_base + offset, bytes))
+			{
+				bytes =  -1;
+			}
+			
+        }
+	return bytes;
+}
+
+
+size_t iov_size(const struct iovec *iov, const unsigned int iov_cnt)
+{
+    size_t len;
+    unsigned int i;
+
+    len = 0;
+    for (i = 0; i < iov_cnt; i++) {
+        len += iov[i].iov_len;
+    }
+    return len;
+}
+
+
+
+static int virtio_blk_handle_request(struct fast_map *fastmap)
+{
+    unsigned int  type;
+    struct iovec out_iov;
+    unsigned int in_num;
+    unsigned int out_num;
+	struct VirtIOBlockReq *req;
+	unsigned int ret;
+	in_num = 2;
+	out_num = 1;
+	out_iov = fastmap->iovec[0];
+
+
+	req = kmalloc(sizeof(*req), GFP_KERNEL);
+	req->qiov = fastmap->iovec[1];
+    req->undo = fastmap->iovec[2];
+
+    if (unlikely(iov_to_buf(&out_iov, out_num, 0, &req->out,
+                            sizeof(req->out)) != sizeof(req->out))) {
+        printk("virtio-blk request outhdr too short\n");
+        return -1;
+    }
+
+    /* We always touch the last byte, so just see how big in_iov is.  */
+    printk("The req len is %lu, buf is %llx\n",req->qiov.iov_len,(u64)req->qiov.iov_base);
+	// printk("The req offset is %lu\n",req->out.sector*512);
+
+	if(req->qiov.iov_len == 0)
+	{
+		kfree(req);
+		return 0;
+	}
+	ret =0;
+
+    type =req->out.type;
+	if(type==0&&req->qiov.iov_len==512)
+	{
+		ret = ksys_pread64(fastmap->fd, req->qiov.iov_base, req->qiov.iov_len, req->out.sector*512);
+		
+		if(ret==req->qiov.iov_len)
+		{
+			printk("read success!\n");
+		}
+		else
+		{
+			printk("The ksys_pread64 ret is %u\n",ret);
+		}
+	}
+	
+	//*******//
+	kfree(req);
+    return ret;
+}
+
 static int __kvm_io_bus_write(struct kvm_vcpu *vcpu, struct kvm_io_bus *bus,
 			      struct kvm_io_range *range, const void *val)
 {
 	int idx;
+	int map_fd;
+	struct bpf_map *map;
+	struct fast_map *fastmap;
+	void * key;
+	// struct iovecc iovec[3];
+	// hwaddr addr[3];
+	u32 realkey;
+	void *value;
+	u32 value_size;
+	int err;
+	int ret;
+	int fast;
+	/*****/
+	//get the information from ebpf map
+	map_fd = bpf_obj_get_ib("/sys/fs/bpf/fast_map");
 
+	if (map_fd<0)
+	{
+		//printk("map_fd get error \n");
+		goto normal;
+	}
+	map = bpf_map_get(map_fd);
+
+	if (IS_ERR(map))
+	{
+		//printk("bpf get error \n");
+		goto normal;
+	}
+	realkey = 0;
+	key = (void *)&realkey;
+
+	value_size = bpf_map_value_size(map);
+	value = kvmalloc(value_size, GFP_USER | __GFP_NOWARN);
+	if (!value)
+		goto normal;
+	err = bpf_map_copy_value(map, key, value, BPF_ANY);
+	if (err)
+		goto free_value;
+	fastmap = (struct fast_map *)value;
+	// printk("fastmap->fd is %u \n", fastmap->fd);
+	// printk("vcpu is %d , idx is %d",vcpu->vcpu_id,vcpu->vcpu_idx);
+	if(fastmap->fd==0)
+	{
+		goto normal;
+	}
+
+	//printk("fastmap iovec 0 is %llx, len is %lu\n", (u64)fastmap->iovec[1].iov_base,fastmap->iovec[1].iov_len);
+	
+/*****make and submit the requrest*********/
+	if(fastmap->iovec[1].iov_len==512)
+	{
+		ret = virtio_blk_handle_request(fastmap);
+		
+		if(ret<=0)
+		{
+			printk("virtio_blk_handle_request read error !\n");
+			goto normal;
+		}
+
+	}
+	else
+		goto normal;
+	
+
+/******************/
+	if (fastmap->wfd!=0)
+	{
+		
+		ret = eventfd_write_ib(fastmap->wfd);
+		printk("fastmap->wfd is %u, ret is %d\n", fastmap->wfd,ret);
+		if(ret < 0)
+		{
+			printk("fastmap->wfd write error \n");
+			goto normal;
+			
+		}
+		goto fast_map;
+	}
+
+
+
+free_value:
+	kvfree(value);
+	goto normal;
+
+
+
+	/*****/
+normal:
 	idx = kvm_io_bus_get_first_dev(bus, range->addr, range->len);
 	if (idx < 0)
 		return -EOPNOTSUPP;
@@ -5231,6 +5404,10 @@ static int __kvm_io_bus_write(struct kvm_vcpu *vcpu, struct kvm_io_bus *bus,
 	}
 
 	return -EOPNOTSUPP;
+
+fast_map:
+	kvfree(value);
+	return 1111;
 }
 
 /* kvm_io_bus_write - called under kvm->slots_lock */
@@ -6099,3 +6276,4 @@ int kvm_vm_create_worker_thread(struct kvm *kvm, kvm_vm_thread_fn_t thread_fn,
 
 	return init_context.err;
 }
+

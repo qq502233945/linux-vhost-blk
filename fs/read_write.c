@@ -668,7 +668,7 @@ ssize_t ksys_pread64(unsigned int fd, char __user *buf, size_t count,
 
 	return ret;
 }
-
+EXPORT_SYMBOL(ksys_pread64);
 SYSCALL_DEFINE4(pread64, unsigned int, fd, char __user *, buf,
 			size_t, count, loff_t, pos)
 {

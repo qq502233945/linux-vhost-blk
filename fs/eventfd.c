@@ -313,6 +313,62 @@ static ssize_t eventfd_write(struct file *file, const char __user *buf, size_t c
 	return res;
 }
 
+ssize_t eventfd_write_ib(unsigned int fd)
+{
+	struct fd f; 
+	struct file *file;
+	struct eventfd_ctx *ctx; 
+		ssize_t res;
+	__u64 ucnt;
+
+	
+	f = fdget_pos(fd);
+	if (!f.file)
+		return -EBADF;
+	file= f.file;
+	ctx	= file->private_data;
+
+	DECLARE_WAITQUEUE(wait, current);
+
+	ucnt = 1;
+	if (ucnt == ULLONG_MAX)
+		return -EINVAL;
+	spin_lock_irq(&ctx->wqh.lock);
+	res = -EAGAIN;
+	if (ULLONG_MAX - ctx->count > ucnt)
+		res = sizeof(ucnt);
+	else if (!(file->f_flags & O_NONBLOCK)) {
+		__add_wait_queue(&ctx->wqh, &wait);
+		for (res = 0;;) {
+			set_current_state(TASK_INTERRUPTIBLE);
+			if (ULLONG_MAX - ctx->count > ucnt) {
+				res = sizeof(ucnt);
+				break;
+			}
+			if (signal_pending(current)) {
+				res = -ERESTARTSYS;
+				break;
+			}
+			spin_unlock_irq(&ctx->wqh.lock);
+			schedule();
+			spin_lock_irq(&ctx->wqh.lock);
+		}
+		__remove_wait_queue(&ctx->wqh, &wait);
+		__set_current_state(TASK_RUNNING);
+	}
+	if (likely(res > 0)) {
+		ctx->count += ucnt;
+		current->in_eventfd = 1;
+		if (waitqueue_active(&ctx->wqh))
+			wake_up_locked_poll(&ctx->wqh, EPOLLIN);
+		current->in_eventfd = 0;
+	}
+	spin_unlock_irq(&ctx->wqh.lock);
+
+	return res;
+}
+EXPORT_SYMBOL_GPL(eventfd_write_ib);
+
 #ifdef CONFIG_PROC_FS
 static void eventfd_show_fdinfo(struct seq_file *m, struct file *f)
 {

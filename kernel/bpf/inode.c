@@ -536,7 +536,7 @@ static void *bpf_obj_do_get_ib(const char *pathname,
 	ret = user_path_at_ib(AT_FDCWD, pathname, LOOKUP_FOLLOW, &path);
 	if (ret)
 	{
-		printk("bpf_obj_get_ib is fail here 0-1\n");
+		// printk("bpf_obj_get_ib is fail here 0-1\n");
 		return ERR_PTR(ret);
 	}
 		
@@ -544,14 +544,14 @@ static void *bpf_obj_do_get_ib(const char *pathname,
 	ret = path_permission(&path, ACC_MODE(flags));
 	if (ret)
 	{
-		printk("bpf_obj_get_ib is fail here 0-2\n");
+		// printk("bpf_obj_get_ib is fail here 0-2\n");
 		goto out;
 	}
 		
 	ret = bpf_inode_type(inode, type);
 	if (ret)
 	{
-		printk("bpf_obj_get_ib is fail here 0-3\n");
+		// printk("bpf_obj_get_ib is fail here 0-3\n");
 		goto out;
 	}
 	raw = bpf_any_get(inode->i_private, *type);

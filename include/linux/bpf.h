@@ -1710,6 +1710,9 @@ extern const struct bpf_prog_ops bpf_offload_prog_ops;
 extern const struct bpf_verifier_ops tc_cls_act_analyzer_ops;
 extern const struct bpf_verifier_ops xdp_analyzer_ops;
 int bpf_obj_get_ib(const char *pathname);
+int bpf_map_copy_value(struct bpf_map *map, void *key, void *value,
+			      __u64 flags);
+u32 bpf_map_value_size(const struct bpf_map *map);
 struct bpf_prog *bpf_prog_get(u32 ufd);
 struct bpf_prog *bpf_prog_get_type_dev(u32 ufd, enum bpf_prog_type type,
 				       bool attach_drv);

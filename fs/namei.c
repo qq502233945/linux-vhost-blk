@@ -212,7 +212,7 @@ getname_flags_ib(const char *filename, int flags, int *empty)
 	result = __getname();
 	if (unlikely(!result))
 	{
-		printk("bpf_obj_get_ib is fail here 0-1-0\n");
+		// printk("bpf_obj_get_ib is fail here 0-1-0\n");
 		return ERR_PTR(-ENOMEM);
 	}		
 	kname = (char *)result->iname;
@@ -243,7 +243,7 @@ getname_flags_ib(const char *filename, int flags, int *empty)
 		 */
 		result = kzalloc(size, GFP_KERNEL);
 		if (unlikely(!result)) {
-			printk("bpf_obj_get_ib is fail here 0-1-3\n");
+			// printk("bpf_obj_get_ib is fail here 0-1-3\n");
 			__putname(kname);
 			return ERR_PTR(-ENOMEM);
 		}
@@ -251,13 +251,13 @@ getname_flags_ib(const char *filename, int flags, int *empty)
 		result->name = kname;
 		len = strncpy_from_kernel_nofault(kname, filename, PATH_MAX);
 		if (unlikely(len < 0)) {
-			printk("bpf_obj_get_ib is fail here 0-1-4\n");
+			// printk("bpf_obj_get_ib is fail here 0-1-4\n");
 			__putname(kname);
 			kfree(result);
 			return ERR_PTR(len);
 		}
 		if (unlikely(len == PATH_MAX)) {
-			printk("bpf_obj_get_ib is fail here 0-1-5\n");
+			// printk("bpf_obj_get_ib is fail here 0-1-5\n");
 			__putname(kname);
 			kfree(result);
 			return ERR_PTR(-ENAMETOOLONG);
@@ -270,7 +270,7 @@ getname_flags_ib(const char *filename, int flags, int *empty)
 		if (empty)
 			*empty = 1;
 		if (!(flags & LOOKUP_EMPTY)) {
-			printk("bpf_obj_get_ib is fail here 0-1-6\n");
+			// printk("bpf_obj_get_ib is fail here 0-1-6\n");
 			putname(result);
 			return ERR_PTR(-ENOENT);
 		}
@@ -2604,13 +2604,13 @@ int filename_lookup_ib(int dfd, struct filename *name, unsigned flags,
 	retval = path_lookupat(&nd, flags | LOOKUP_RCU, path);
 	if (unlikely(retval == -ECHILD))
 	{
-		printk("bpf_obj_get_ib is fail here 0-1-8\n");
+		// printk("bpf_obj_get_ib is fail here 0-1-8\n");
 		retval = path_lookupat(&nd, flags, path);
 	}
 		
 	if (unlikely(retval == -ESTALE))
 	{
-		printk("bpf_obj_get_ib is fail here 0-1-8\n");
+		// printk("bpf_obj_get_ib is fail here 0-1-8\n");
 		retval = path_lookupat(&nd, flags | LOOKUP_REVAL, path);
 	}
 	if (likely(!retval))

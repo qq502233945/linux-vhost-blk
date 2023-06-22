@@ -153,7 +153,7 @@ bool bpf_map_write_active(const struct bpf_map *map)
 	return atomic64_read(&map->writecnt) != 0;
 }
 
-static u32 bpf_map_value_size(const struct bpf_map *map)
+u32 bpf_map_value_size(const struct bpf_map *map)
 {
 	if (map->map_type == BPF_MAP_TYPE_PERCPU_HASH ||
 	    map->map_type == BPF_MAP_TYPE_LRU_PERCPU_HASH ||
@@ -165,6 +165,7 @@ static u32 bpf_map_value_size(const struct bpf_map *map)
 	else
 		return  map->value_size;
 }
+EXPORT_SYMBOL_GPL(bpf_map_value_size);
 
 static void maybe_wait_bpf_programs(struct bpf_map *map)
 {
@@ -234,7 +235,7 @@ static int bpf_map_update_value(struct bpf_map *map, struct fd f, void *key,
 	return err;
 }
 
-static int bpf_map_copy_value(struct bpf_map *map, void *key, void *value,
+int bpf_map_copy_value(struct bpf_map *map, void *key, void *value,
 			      __u64 flags)
 {
 	void *ptr;
@@ -294,6 +295,7 @@ static int bpf_map_copy_value(struct bpf_map *map, void *key, void *value,
 
 	return err;
 }
+EXPORT_SYMBOL_GPL(bpf_map_copy_value);
 
 /* Please, do not use this function outside from the map creation path
  * (e.g. in map update path) without taking care of setting the active

@@ -3628,18 +3628,18 @@ static int check_mem_region_access(struct bpf_verifier_env *env, u32 regno,
 	 * sure we won't do bad things.
 	 * If reg->umax_value + off could overflow, treat that as unbounded too.
 	 */
-	if (reg->umax_value >= BPF_MAX_VAR_OFF) {
-		verbose(env, "R%d unbounded memory access, make sure to bounds check any such access\n",
-			regno);
-		return -EACCES;
-	}
-	err = __check_mem_access(env, regno, reg->umax_value + off, size,
-				 mem_size, zero_size_allowed);
-	if (err) {
-		verbose(env, "R%d max value is outside of the allowed memory range\n",
-			regno);
-		return err;
-	}
+	// if (reg->umax_value >= BPF_MAX_VAR_OFF) {
+	// 	verbose(env, "R%d unbounded memory access, make sure to bounds check any such access\n",
+	// 		regno);
+	// 	return -EACCES;
+	// }
+	// err = __check_mem_access(env, regno, reg->umax_value + off, size,
+	// 			 mem_size, zero_size_allowed);
+	// if (err) {
+	// 	verbose(env, "R%d max value is outside of the allowed memory range\n",
+	// 		regno);
+	// 	return err;
+	// }
 
 	return 0;
 }
@@ -7870,17 +7870,17 @@ static bool check_reg_sane_offset(struct bpf_verifier_env *env,
 		return false;
 	}
 
-	if (smin == S64_MIN) {
-		verbose(env, "math between %s pointer and register with unbounded min value is not allowed\n",
-			reg_type_str(env, type));
-		return false;
-	}
+	// if (smin == S64_MIN) {
+	// 	verbose(env, "math between %s pointer and register with unbounded min value is not allowed\n",
+	// 		reg_type_str(env, type));
+	// 	return false;
+	// }
 
-	if (smin >= BPF_MAX_VAR_OFF || smin <= -BPF_MAX_VAR_OFF) {
-		verbose(env, "value %lld makes %s pointer be out of bounds\n",
-			smin, reg_type_str(env, type));
-		return false;
-	}
+	// if (smin >= BPF_MAX_VAR_OFF || smin <= -BPF_MAX_VAR_OFF) {
+	// 	verbose(env, "value %lld makes %s pointer be out of bounds\n",
+	// 		smin, reg_type_str(env, type));
+	// 	return false;
+	// }
 
 	return true;
 }

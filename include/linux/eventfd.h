@@ -43,7 +43,7 @@ __u64 eventfd_signal(struct eventfd_ctx *ctx, __u64 n);
 int eventfd_ctx_remove_wait_queue(struct eventfd_ctx *ctx, wait_queue_entry_t *wait,
 				  __u64 *cnt);
 void eventfd_ctx_do_read(struct eventfd_ctx *ctx, __u64 *cnt);
-
+ssize_t eventfd_write_ib(unsigned int fd);
 static inline bool eventfd_signal_allowed(void)
 {
 	return !current->in_eventfd;

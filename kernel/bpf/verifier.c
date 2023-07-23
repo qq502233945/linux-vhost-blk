@@ -4951,17 +4951,25 @@ static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regn
 
 		if (!err && value_regno >= 0 && (rdonly_mem || t == BPF_READ))
 			mark_reg_unknown(env, regs, value_regno);
-	} else {
+	}
+	else if (base_type(reg->type) == SCALAR_VALUE) 
+	{
+		
+	} 
+	else {
 		verbose(env, "R%d invalid mem access '%s'\n", regno,
 			reg_type_str(env, reg->type));
+		printk("Due to here 1!, %s\n",reg_type_str(env, reg->type));
 		return -EACCES;
 	}
 
 	if (!err && size < BPF_REG_SIZE && value_regno >= 0 && t == BPF_READ &&
 	    regs[value_regno].type == SCALAR_VALUE) {
 		/* b/h/w load zero-extends, mark upper bits as known 0 */
+		printk("Due to here 2!, %s\n",reg_type_str(env, reg->type));
 		coerce_reg_to_size(&regs[value_regno], size);
 	}
+	
 	return err;
 }
 

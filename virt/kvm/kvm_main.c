@@ -5267,10 +5267,6 @@ static int virtio_blk_handle_request(struct fast_map *fastmap)
         return -1;
     }
 
-    /* We always touch the last byte, so just see how big in_iov is.  */
-    // printk("The req len is %lu, buf is %llx\n",req->qiov.iov_len,(u64)req->qiov.iov_base);
-	// printk("The req offset is %lu\n",req->out.sector*512);
-
 	if(req->qiov.iov_len == 0)
 	{
 		kfree(req);
@@ -5312,14 +5308,12 @@ static int __kvm_io_bus_write(struct kvm_vcpu *vcpu, struct kvm_io_bus *bus,
 	/*****/
 	//get the information from ebpf map
 	map_fd = bpf_obj_get_ib("/sys/fs/bpf/fast_map");
-
 	if (map_fd<0)
 	{
 		//printk("map_fd get error \n");
 		goto normal;
 	}
 	map = bpf_map_get(map_fd);
-
 	if (IS_ERR(map))
 	{
 		//printk("bpf get error \n");
@@ -5327,7 +5321,6 @@ static int __kvm_io_bus_write(struct kvm_vcpu *vcpu, struct kvm_io_bus *bus,
 	}
 	realkey = 0;
 	key = (void *)&realkey;
-
 	value_size = bpf_map_value_size(map);
 	value = kvmalloc(value_size, GFP_USER | __GFP_NOWARN);
 	if (!value)
@@ -5386,7 +5379,7 @@ free_value:
 
 	/*****/
 normal:
-	printk("normal path \n");
+	// printk("normal path \n");
 	idx = kvm_io_bus_get_first_dev(bus, range->addr, range->len);
 	if (idx < 0)
 		return -EOPNOTSUPP;

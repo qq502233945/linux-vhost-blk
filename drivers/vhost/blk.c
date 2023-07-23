@@ -385,8 +385,8 @@ static int vhost_blk_bio_make(struct vhost_blk_req *req,
 						// else
 						// {
 						// 	printk("bpf open file success! \n");
-						// 	printk("bpf  file type is %u! \n",bio->xrp_bpf_prog->type);
-						// 	printk("bpf  file len is %u! \n",bio->xrp_bpf_prog->len);
+						// 	printk("bpf  file type is %u! \n",bdev->xrp_bpf_prog->type);
+						// 	printk("bpf  file len is %u! \n",bdev->xrp_bpf_prog->len);
 						// 	// for(k=0;k<bio->xrp_bpf_prog->len;k++)
 						// 	// {
 						// 	// 	printk("Ins:code:%u",bio->xrp_bpf_prog->insnsi[k]->code);
@@ -445,7 +445,7 @@ static int vhost_blk_req_submit(struct vhost_blk_req *req, struct file *file)
 			for(i=0;i<req->ib_es_num;i++)
 			{
 				spin_lock(&inode->xrp_extent_lock);
-				printk("The %dth es:lblk: %lu; len: %lu; pblk: %llu\n",i,req->ib_es[i].es_lblk,req->ib_es[i].es_len,req->ib_es[i].es_pblk);
+				// printk("The %dth es:lblk: %lu; len: %lu; pblk: %llu\n",i,req->ib_es[i].es_lblk,req->ib_es[i].es_len,req->ib_es[i].es_pblk);
 				xrp_sync_ext4_extent(inode,&req->ib_es[i]);
 				spin_unlock(&inode->xrp_extent_lock);		
 			}
@@ -645,10 +645,12 @@ static void vhost_blk_handle_host_kick(struct vhost_work *work)
 			{
 				// printk("value is found\n");
 				memcpy(req->ibmsg.query.value, req->bio[0]->xrp_scratch_page.values[0].value, sizeof(val__t));
+				// unsigned long long_val = kstrtoul(req->bio[0]->xrp_scratch_page.values[0].value, NULL, 10);
+				// printk("value found, value is %lu\n",long_val);
 			}
 			else
 			{
-				printk("value is not found\n");
+				// printk("value is not found\n");
 			}
 		}
 
